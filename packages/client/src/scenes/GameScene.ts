@@ -1,8 +1,8 @@
 import Phaser from "phaser";
 import { createClient } from "../net";
-import { TILE_SIZE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
+import { TILE_SIZE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS } from "@toodee/shared";
 
-type ServerPlayer = { id: string; x: number; y: number; dir: number; };
+type ServerPlayer = { id: string; x: number; y: number; dir: number; founderTier?: string; displayTitle?: string; chatColor?: string; unlockedRewards?: string[]; };
 
 export class GameScene extends Phaser.Scene {
   private room?: any;
@@ -17,7 +17,9 @@ export class GameScene extends Phaser.Scene {
   private chatInputEl?: HTMLInputElement;
   private hpText?: Phaser.GameObjects.Text;
   private goldText?: Phaser.GameObjects.Text;
+  private titleText?: Phaser.GameObjects.Text;
   private shopEl?: HTMLDivElement;
+  private rewardsEl?: HTMLDivElement;
   private splashImage?: Phaser.GameObjects.Image;
   private toastRoot?: HTMLDivElement;
 
@@ -63,6 +65,7 @@ export class GameScene extends Phaser.Scene {
         this.cameras.main.setBounds(0, 0, w, h, true);
         this.hpText = this.add.text(12, 12, "HP", { color: "#e6f3ff", fontFamily: "monospace", fontSize: "12px" }).setScrollFactor(0);
         this.goldText = this.add.text(12, 28, "Gold", { color: "#ffd66b", fontFamily: "monospace", fontSize: "12px" }).setScrollFactor(0);
+        this.titleText = this.add.text(12, 44, "", { color: "#FFD700", fontFamily: "monospace", fontSize: "11px" }).setScrollFactor(0);
       }
     };
     this.room.state.players.onRemove = (_: any, key: string) => {
@@ -80,6 +83,11 @@ export class GameScene extends Phaser.Scene {
         const maxHp = p.maxHp ?? 0;
         this.hpText?.setText(`HP ${hp}/${maxHp}`);
         if (this.goldText && typeof p.gold === "number") this.goldText.setText(`Gold ${p.gold}`);
+        
+        // Update founder title display
+        if (this.titleText && p.displayTitle) {
+          this.titleText.setText(p.displayTitle);
+        }
       }
     };
 
@@ -125,6 +133,17 @@ export class GameScene extends Phaser.Scene {
     keyE.on("down", () => this.tryOpenShop());
     this.room.onMessage("shop:list", (payload: any) => this.showShop(payload));
     this.room.onMessage("shop:result", (payload: any) => this.updateShopResult(payload));
+    
+    // rewards system
+    const keyR = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+    keyR.on("down", () => this.toggleRewards());
+    const keyB = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.B);
+    keyB.on("down", () => this.promptBugReport());
+    const keyF = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F);
+    keyF.on("down", () => this.promptReferral());
+    this.room.onMessage("bug_report:result", (payload: any) => this.handleBugReportResult(payload));
+    this.room.onMessage("referral:result", (payload: any) => this.handleReferralResult(payload));
+    this.room.onMessage("anniversary:reward", (payload: any) => this.handleAnniversaryReward(payload));
 
     // Fade out splash and show connected toast
     if (this.splashImage) {
@@ -391,12 +410,176 @@ export class GameScene extends Phaser.Scene {
     const line = document.createElement("div");
     const time = new Date(msg.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     line.textContent = `[${time}] ${msg.from}: ${msg.text}`;
+    
+    // Apply special chat colors for founder rewards
+    const player = this.room?.state.players.get(this.room.sessionId);
+    if (player && player.chatColor && player.chatColor !== "#FFFFFF") {
+      line.style.color = player.chatColor;
+    }
+    
     this.chatLogEl.appendChild(line);
     // trim
     while (this.chatLogEl.childElementCount > 50) {
       this.chatLogEl.firstElementChild?.remove();
     }
     this.chatLogEl.scrollTop = this.chatLogEl.scrollHeight;
+  }
+
+  private toggleRewards() {
+    if (this.rewardsEl) {
+      this.rewardsEl.remove();
+      this.rewardsEl = undefined;
+      return;
+    }
+    
+    const me = this.room?.state.players.get(this.room.sessionId);
+    if (!me) return;
+    
+    const root = document.createElement("div");
+    Object.assign(root.style, {
+      position: "absolute",
+      left: "50%",
+      top: "50%",
+      transform: "translate(-50%, -50%)",
+      width: "400px",
+      maxHeight: "500px",
+      background: "rgba(6,12,18,0.95)",
+      border: "2px solid rgba(140,160,180,0.5)",
+      borderRadius: "12px",
+      color: "#e6f3ff",
+      padding: "16px",
+      zIndex: 20 as any,
+      overflowY: "auto"
+    });
+    
+    const title = document.createElement("div");
+    title.textContent = "🏆 Founder Rewards";
+    title.style.fontWeight = "bold";
+    title.style.fontSize = "16px";
+    title.style.marginBottom = "12px";
+    title.style.textAlign = "center";
+    root.appendChild(title);
+    
+    const tierName = me.founderTier || "none";
+    const tierEl = document.createElement("div");
+    let tierDisplay = "None";
+    if (tierName === FounderTier.EarlyBird) tierDisplay = "👑 Early Bird";
+    else if (tierName === FounderTier.BetaTester) tierDisplay = "🚀 Beta Tester";
+    else if (tierName === FounderTier.BugHunter) tierDisplay = "🐛 Bug Hunter";
+    
+    tierEl.innerHTML = `<strong>Founder Tier:</strong> ${tierDisplay}`;
+    tierEl.style.marginBottom = "12px";
+    root.appendChild(tierEl);
+    
+    // Show unlocked rewards
+    if (me.unlockedRewards && me.unlockedRewards.length > 0) {
+      const rewardsTitle = document.createElement("div");
+      rewardsTitle.textContent = "🎁 Unlocked Rewards:";
+      rewardsTitle.style.fontWeight = "bold";
+      rewardsTitle.style.marginBottom = "8px";
+      root.appendChild(rewardsTitle);
+      
+      me.unlockedRewards.forEach((rewardId: string) => {
+        // Find reward in all tiers
+        let reward;
+        for (const tier of Object.values(FounderTier)) {
+          reward = FOUNDER_REWARDS[tier].find(r => r.id === rewardId);
+          if (reward) break;
+        }
+        
+        if (reward) {
+          const rewardEl = document.createElement("div");
+          rewardEl.innerHTML = `${reward.icon || "⭐"} <strong>${reward.name}</strong><br><span style="font-size: 11px; opacity: 0.8;">${reward.description}</span>`;
+          rewardEl.style.marginBottom = "8px";
+          rewardEl.style.padding = "6px";
+          rewardEl.style.background = "rgba(20, 40, 60, 0.3)";
+          rewardEl.style.borderRadius = "6px";
+          root.appendChild(rewardEl);
+        }
+      });
+    }
+    
+    // Add controls hint
+    const controls = document.createElement("div");
+    controls.innerHTML = `<br><strong>Controls:</strong><br>
+    B - Submit bug report<br>
+    F - Add referral<br>
+    R - Toggle this panel<br>
+    E - Open shop`;
+    controls.style.fontSize = "11px";
+    controls.style.opacity = "0.7";
+    controls.style.marginTop = "12px";
+    root.appendChild(controls);
+    
+    const close = document.createElement("button");
+    close.textContent = "Close";
+    Object.assign(close.style, {
+      position: "absolute",
+      top: "12px",
+      right: "12px",
+      padding: "4px 8px",
+      background: "#17324c",
+      color: "#e6f3ff",
+      border: "1px solid #406080",
+      borderRadius: "4px",
+      cursor: "pointer"
+    });
+    close.onclick = () => {
+      root.remove();
+      this.rewardsEl = undefined;
+    };
+    root.appendChild(close);
+    
+    document.body.appendChild(root);
+    this.rewardsEl = root;
+  }
+  
+  private handleBugReportResult(payload: any) {
+    if (payload.ok) {
+      this.showToast(`Bug report submitted! (${payload.reportsCount}/5)`, "ok");
+      if (payload.message) {
+        this.showToast(payload.message, "ok");
+      }
+    } else {
+      this.showToast(payload.reason, "error");
+    }
+  }
+  
+  private handleReferralResult(payload: any) {
+    if (payload.ok) {
+      const msg = `Referral added! Count: ${payload.referralsCount}`;
+      this.showToast(msg, "ok");
+      if (payload.rewardUnlocked) {
+        this.showToast(`New reward: ${payload.rewardUnlocked.name}!`, "ok");
+      }
+    } else {
+      this.showToast(payload.reason, "error");
+    }
+  }
+  
+  private handleAnniversaryReward(payload: any) {
+    if (payload.reward) {
+      this.showToast(`${payload.message}`, "ok");
+    }
+  }
+
+  private promptBugReport() {
+    const description = prompt("Describe the bug you found (minimum 10 characters):");
+    if (description && description.length >= 10) {
+      this.room?.send("bug_report", { description });
+    } else if (description) {
+      this.showToast("Bug report must be at least 10 characters", "error");
+    }
+  }
+
+  private promptReferral() {
+    // Simulate adding a referral - in a real system this would be more sophisticated
+    const referredId = prompt("Enter referred player ID (demo purposes):");
+    if (referredId) {
+      // For demo, we'll use the current time as a fake player ID
+      const fakePlayerId = `player_${Date.now()}`;
+      this.room?.send("referral", { referredPlayerId: fakePlayerId });
+    }
   }
 }
 

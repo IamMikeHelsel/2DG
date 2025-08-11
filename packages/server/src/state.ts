@@ -1,4 +1,4 @@
-import { Schema, type, MapSchema } from "@colyseus/schema";
+import { Schema, type, MapSchema, ArraySchema } from "@colyseus/schema";
 
 export class Player extends Schema {
   @type("string") id: string = "";
@@ -12,6 +12,16 @@ export class Player extends Schema {
   @type("uint16") maxHp: number = 0;
   @type("uint32") gold: number = 0;
   @type("uint16") pots: number = 0; // small potions
+  
+  // Founder rewards system
+  @type("string") founderTier: string = "none";
+  @type("uint64") joinTimestamp: number = 0;
+  @type("uint16") bugReports: number = 0;
+  @type("uint16") referralsCount: number = 0;
+  @type(["string"]) unlockedRewards = new ArraySchema<string>();
+  @type("boolean") anniversaryParticipated: boolean = false;
+  @type("string") displayTitle: string = "";
+  @type("string") chatColor: string = "#FFFFFF";
 }
 
 export class GameState extends Schema {

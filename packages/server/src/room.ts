@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { WorldState, Player, Mob } from "./state";
-import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
+import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS } from "@toodee/shared";
 import { generateMichiganish, isWalkable, Grid } from "./map";
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
@@ -11,6 +11,8 @@ export class GameRoom extends Room<WorldState> {
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
+  private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
+  private joinCounter = 0;
 
   onCreate(options: any) {
     this.setPatchRate(1000 / 10); // send state ~10/s; interpolate on client
@@ -34,6 +36,8 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("attack", (client) => this.handleAttack(client.sessionId));
     this.onMessage("shop:list", (client) => this.handleShopList(client.sessionId));
     this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
+    this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
+    this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
 
     this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
   }
@@ -46,6 +50,24 @@ export class GameRoom extends Room<WorldState> {
     p.hp = p.maxHp;
     p.gold = 20;
     p.pots = 0;
+    
+    // Initialize founder rewards tracking
+    p.joinTimestamp = Date.now();
+    p.bugReports = 0;
+    p.referralsCount = 0;
+    p.anniversaryParticipated = false;
+    p.displayTitle = "";
+    p.chatColor = "#FFFFFF";
+    
+    // Determine founder tier
+    this.joinCounter++;
+    const founderTier = this.determineFounderTier(this.joinCounter, p.joinTimestamp);
+    p.founderTier = founderTier;
+    this.founderTracker.set(client.sessionId, { joinOrder: this.joinCounter, tier: founderTier });
+    
+    // Grant initial founder rewards
+    this.grantFounderRewards(p, founderTier);
+    
     // spawn near center (or restore from client-provided snapshot for demo persistence)
     const rx = options?.restore?.x, ry = options?.restore?.y;
     if (typeof rx === "number" && typeof ry === "number") {
@@ -207,6 +229,133 @@ export class GameRoom extends Room<WorldState> {
     p.gold -= cost;
     if (item.id === "pot_small") p.pots = Math.min(999, p.pots + qty);
     this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
+  }
+
+  private determineFounderTier(joinOrder: number, joinTimestamp: number): FounderTier {
+    // Early Bird: First 50 players
+    if (joinOrder <= EARLY_BIRD_LIMIT) {
+      return FounderTier.EarlyBird;
+    }
+    
+    // Beta Tester: Within first 2 weeks (simulated with current demo)
+    const daysSinceLaunch = (Date.now() - joinTimestamp) / (1000 * 60 * 60 * 24);
+    if (daysSinceLaunch <= BETA_TEST_PERIOD_DAYS) {
+      return FounderTier.BetaTester;
+    }
+    
+    return FounderTier.None;
+  }
+
+  private grantFounderRewards(player: Player, tier: FounderTier) {
+    const rewards = FOUNDER_REWARDS[tier];
+    for (const reward of rewards) {
+      player.unlockedRewards.push(reward.id);
+      
+      // Apply specific reward effects
+      switch (reward.type) {
+        case "title":
+          if (reward.id === "founder_badge") {
+            player.displayTitle = "👑 Founder";
+          } else if (reward.id === "bug_hunter_title") {
+            player.displayTitle = "🐛 Bug Hunter";
+          }
+          break;
+        case "cosmetic":
+          if (reward.id === "special_chat_color") {
+            player.chatColor = "#FFD700"; // Gold color for beta testers
+          }
+          break;
+      }
+    }
+  }
+
+  private handleBugReport(playerId: string, data: { description: string }) {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    
+    // Basic validation
+    if (!data.description || data.description.length < 10) {
+      this.clients.find(c => c.sessionId === playerId)?.send("bug_report:result", { 
+        ok: false, 
+        reason: "Bug report must be at least 10 characters" 
+      });
+      return;
+    }
+    
+    p.bugReports++;
+    
+    // Check if player qualifies for Bug Hunter tier
+    if (p.bugReports >= BUG_HUNTER_REPORTS_REQUIRED && p.founderTier === FounderTier.None) {
+      p.founderTier = FounderTier.BugHunter;
+      this.grantFounderRewards(p, FounderTier.BugHunter);
+    }
+    
+    this.clients.find(c => c.sessionId === playerId)?.send("bug_report:result", { 
+      ok: true, 
+      reportsCount: p.bugReports,
+      message: p.bugReports >= BUG_HUNTER_REPORTS_REQUIRED ? "Bug Hunter tier unlocked!" : undefined
+    });
+  }
+
+  private handleReferral(playerId: string, data: { referredPlayerId: string }) {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    
+    // Basic validation - in a real system this would verify the referred player exists and is new
+    if (!data.referredPlayerId) {
+      this.clients.find(c => c.sessionId === playerId)?.send("referral:result", {
+        ok: false,
+        reason: "Invalid referral data"
+      });
+      return;
+    }
+    
+    p.referralsCount++;
+    
+    // Check for referral rewards
+    const referralReward = REFERRAL_REWARDS.find(r => r.referrals === p.referralsCount);
+    if (referralReward) {
+      p.unlockedRewards.push(referralReward.reward.id);
+      
+      this.clients.find(c => c.sessionId === playerId)?.send("referral:result", {
+        ok: true,
+        referralsCount: p.referralsCount,
+        rewardUnlocked: referralReward.reward
+      });
+    } else {
+      this.clients.find(c => c.sessionId === playerId)?.send("referral:result", {
+        ok: true,
+        referralsCount: p.referralsCount
+      });
+    }
+  }
+
+  private grantAnniversaryReward(playerId: string, rewardType: "login" | "quest" | "boss") {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    
+    let reward;
+    switch (rewardType) {
+      case "login":
+        reward = ANNIVERSARY_REWARDS.find(r => r.id === "birthday_badge");
+        break;
+      case "quest":
+        reward = ANNIVERSARY_REWARDS.find(r => r.id === "birthday_quest_reward");
+        break;
+      case "boss":
+        reward = ANNIVERSARY_REWARDS.find(r => r.id === "boss_slayer");
+        break;
+    }
+    
+    if (reward && !p.unlockedRewards.includes(reward.id)) {
+      p.unlockedRewards.push(reward.id);
+      p.anniversaryParticipated = true;
+      
+      this.clients.find(c => c.sessionId === playerId)?.send("anniversary:reward", {
+        reward: reward,
+        message: `Anniversary reward unlocked: ${reward.name}!`
+      });
+    }
   }
 }
 
