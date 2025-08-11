@@ -1,7 +1,6 @@
 {
   "name": "@toodee/server",
   "version": "0.1.0",
-  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx src/index.ts",

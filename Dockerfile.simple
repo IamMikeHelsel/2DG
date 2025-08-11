@@ -1,0 +1,32 @@
+# Simple working Dockerfile for Fly.io
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+
+# Copy everything
+COPY . .
+
+# Install ALL dependencies
+RUN pnpm install --frozen-lockfile || pnpm install
+
+# Build the project
+RUN pnpm -F @toodee/shared build && pnpm -F @toodee/server build
+
+WORKDIR /app/packages/server
+
+# Create symlink for @toodee/shared
+RUN mkdir -p node_modules/@toodee && \
+    ln -s /app/packages/shared node_modules/@toodee/shared
+
+ENV NODE_ENV=production
+ENV PORT=2567
+
+EXPOSE 2567
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s \
+  CMD wget -qO- http://127.0.0.1:2567/health || exit 1
+
+CMD ["node", "dist/server/src/index.js"]

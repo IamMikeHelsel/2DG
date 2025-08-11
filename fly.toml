@@ -3,7 +3,7 @@ app = "toodeegame"
 primary_region = "ord"  # Chicago - central US location
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "Dockerfile.simple"
 
 [env]
   NODE_ENV = "production"
