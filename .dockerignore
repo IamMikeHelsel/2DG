@@ -1,0 +1,10 @@
+node_modules
+packages/**/node_modules
+packages/client/dist
+packages/server/dist
+packages/shared/dist
+.github
+.git
+.gitignore
+.vscode
+.DS_Store

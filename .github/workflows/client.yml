@@ -1,0 +1,41 @@
+name: client
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'packages/client/**'
+      - 'packages/shared/**'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Enable corepack / pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.0.0 --activate
+      - name: Install deps
+        run: pnpm i --frozen-lockfile
+      - name: Build client
+        env:
+          VITE_SERVER_URL: ${{ secrets.VITE_SERVER_URL }}
+        run: pnpm -F @toodee/client build
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/client/dist
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

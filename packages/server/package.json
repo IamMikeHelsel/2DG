@@ -1,0 +1,22 @@
+{
+  "name": "@toodee/server",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"(server lint placeholder)\""
+  },
+  "dependencies": {
+    "colyseus": "^0.15.16",
+    "@colyseus/schema": "^2.0.28",
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.15.7",
+    "typescript": "^5.5.3"
+  }
+}

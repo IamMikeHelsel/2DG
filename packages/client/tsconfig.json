@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@toodee/shared": ["../shared/src"]
+    }
+  },
+  "include": ["src"]
+}

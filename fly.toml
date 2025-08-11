@@ -1,0 +1,19 @@
+# Edit 'app' with your Fly app name (e.g., "toodeegame")
+app = "toodeegame"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 2567
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[[services.tcp_checks]]
+  interval = "10s"
+  timeout = "2s"
+  grace_period = "5s"
