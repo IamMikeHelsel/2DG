@@ -1,9 +1,9 @@
 import Phaser from "phaser";
 import { GameScene } from "./scenes/GameScene";
-import { EnhancedGameScene } from "./scenes/EnhancedGameScene";
+import { ImprovedGameScene } from "./scenes/ImprovedGameScene";
 
-// Use enhanced scene if available, fallback to original
-const useEnhanced = false; // Toggle this to switch between scenes
+// Use improved scene with character sprites and better terrain
+const useImproved = true;
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.WEBGL,
@@ -16,7 +16,7 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.RESIZE
   },
-  scene: useEnhanced ? [EnhancedGameScene] : [GameScene]
+  scene: useImproved ? [ImprovedGameScene] : [GameScene]
 };
 
 new Phaser.Game(config);

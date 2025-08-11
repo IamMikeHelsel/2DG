@@ -50,7 +50,8 @@ export class ImprovedGameScene extends Phaser.Scene {
 
   async create() {
     this.cursors = this.input.keyboard!.createCursorKeys();
-    this.keys = this.input.keyboard!.addKeys("W,A,S,D") as any;
+    // Remove WASD since we use chat
+    this.keys = {} as any;
 
     // Create animation sets for sprites
     this.createAnimations();
@@ -132,6 +133,14 @@ export class ImprovedGameScene extends Phaser.Scene {
           stroke: '#000000',
           strokeThickness: 2
         }).setScrollFactor(0).setDepth(100);
+        
+        // Add controls hint
+        this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat", {
+          color: "#aaaaaa",
+          fontSize: "12px",
+          stroke: '#000000',
+          strokeThickness: 1
+        }).setScrollFactor(0).setDepth(100);
       }
     };
 
@@ -146,23 +155,36 @@ export class ImprovedGameScene extends Phaser.Scene {
       const sprite = this.playerSprites.get(key);
       if (!container || !sprite) return;
       
+      // Check if player is actually moving
+      const prevX = container.x;
+      const prevY = container.y;
+      const targetX = p.x * TILE_SIZE;
+      const targetY = p.y * TILE_SIZE;
+      const isMoving = Math.abs(targetX - prevX) > 0.1 || Math.abs(targetY - prevY) > 0.1;
+      
       // Smooth movement
       this.tweens.add({
         targets: container,
-        x: p.x * TILE_SIZE,
-        y: p.y * TILE_SIZE,
+        x: targetX,
+        y: targetY,
         duration: 100,
         ease: 'Linear'
       });
       
-      // Update animation based on direction
+      // Update animation based on direction and movement
       const isLocal = key === this.room.sessionId;
       const spriteKey = isLocal ? 'player' : 'other_player';
       const dirs = ['up', 'right', 'down', 'left'];
-      if (p.dir >= 0 && p.dir < 4) {
+      
+      if (isMoving && p.dir >= 0 && p.dir < 4) {
         const animKey = `${spriteKey}_walk_${dirs[p.dir]}`;
         if (sprite.anims.currentAnim?.key !== animKey) {
           sprite.play(animKey);
+        }
+      } else if (!isMoving && p.dir >= 0 && p.dir < 4) {
+        const idleKey = `${spriteKey}_idle_${dirs[p.dir]}`;
+        if (sprite.anims.currentAnim?.key !== idleKey) {
+          sprite.play(idleKey);
         }
       }
       
@@ -391,18 +413,83 @@ export class ImprovedGameScene extends Phaser.Scene {
   }
 
   private setupInput() {
-    // Movement at 20Hz
+    // Track last input state and target position
+    let lastInput = { up: false, down: false, left: false, right: false };
+    let targetPos: { x: number, y: number } | null = null;
+    let myPos = { x: 0, y: 0 };
+    
+    // Left or right-click to move
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      // Allow both left and right click for movement
+      if (pointer.leftButtonDown() || pointer.rightButtonDown()) {
+        // Get world coordinates
+        const worldX = this.cameras.main.scrollX + pointer.x / this.cameras.main.zoom;
+        const worldY = this.cameras.main.scrollY + pointer.y / this.cameras.main.zoom;
+        
+        // Convert to tile coordinates
+        targetPos = {
+          x: Math.floor(worldX / TILE_SIZE),
+          y: Math.floor(worldY / TILE_SIZE)
+        };
+        
+        // Visual feedback - create a click indicator
+        const indicator = this.add.graphics();
+        indicator.lineStyle(2, 0x00ff00, 1);
+        indicator.strokeCircle(worldX, worldY, 10);
+        indicator.setDepth(50);
+        
+        this.tweens.add({
+          targets: indicator,
+          alpha: 0,
+          duration: 500,
+          onComplete: () => indicator.destroy()
+        });
+      }
+    });
+    
+    // Movement at 20Hz (arrow keys or pathfinding to target)
     this.time.addEvent({
       delay: 50,
       callback: () => {
-        const up = this.cursors.up?.isDown || this.keys.W?.isDown;
-        const down = this.cursors.down?.isDown || this.keys.S?.isDown;
-        const left = this.cursors.left?.isDown || this.keys.A?.isDown;
-        const right = this.cursors.right?.isDown || this.keys.D?.isDown;
+        // Get current player position
+        const myPlayer = this.players.get(this.room?.sessionId);
+        if (myPlayer) {
+          myPos.x = Math.round(myPlayer.x / TILE_SIZE);
+          myPos.y = Math.round(myPlayer.y / TILE_SIZE);
+        }
         
-        if (up || down || left || right) {
+        let up = this.cursors.up?.isDown;
+        let down = this.cursors.down?.isDown;
+        let left = this.cursors.left?.isDown;
+        let right = this.cursors.right?.isDown;
+        
+        // Simple pathfinding to target if right-clicked
+        if (targetPos && !up && !down && !left && !right) {
+          const dx = targetPos.x - myPos.x;
+          const dy = targetPos.y - myPos.y;
+          
+          // Move towards target
+          if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
+            if (Math.abs(dx) > Math.abs(dy)) {
+              right = dx > 0;
+              left = dx < 0;
+            } else {
+              down = dy > 0;
+              up = dy < 0;
+            }
+          } else {
+            // Reached target
+            targetPos = null;
+          }
+        }
+        
+        // Send input if changed or if still moving
+        if (up !== lastInput.up || down !== lastInput.down || 
+            left !== lastInput.left || right !== lastInput.right ||
+            up || down || left || right) {
           this.seq++;
           this.room?.send("input", { seq: this.seq, up, down, left, right });
+          lastInput = { up, down, left, right };
         }
       },
       loop: true
