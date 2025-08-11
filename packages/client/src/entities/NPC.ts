@@ -1,5 +1,5 @@
 import { Scene, GameObjects } from 'phaser';
-import { TILE_SIZE } from '../../../shared/constants';
+import { TILE_SIZE } from '@toodee/shared';
 
 export interface NPCDialogue {
   text: string;

@@ -1,0 +1,63 @@
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+}
+
+/* Dialogue UI styles */
+.dialogue-response:hover {
+  background: rgba(80, 80, 80, 0.9) !important;
+  cursor: pointer;
+}
+
+/* Chat styles */
+.chat-message {
+  margin-bottom: 4px;
+  word-wrap: break-word;
+}
+
+.chat-message.system {
+  color: #ffd700;
+  font-style: italic;
+}
+
+/* Shop styles */
+.shop-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  margin-bottom: 4px;
+  background: rgba(40, 40, 40, 0.5);
+  border-radius: 4px;
+}
+
+.shop-item:hover {
+  background: rgba(60, 60, 60, 0.5);
+}
+
+/* NPC indicator pulse */
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
