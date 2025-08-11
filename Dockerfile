@@ -10,13 +10,17 @@ RUN pnpm -F @toodee/shared build && pnpm -F @toodee/server build
 FROM node:20-alpine as runtime
 WORKDIR /app
 ENV NODE_ENV=production
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 COPY --from=build /app/packages/server/dist ./dist
 COPY --from=build /app/packages/server/package.json ./package.json
-COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages/shared/dist ./shared-dist
+# Install only production dependencies
+RUN pnpm i --prod --no-frozen-lockfile
 # Provide @toodee/shared at runtime by copying its built files into node_modules
 RUN mkdir -p node_modules/@toodee/shared && \
-    printf '{"name":"@toodee/shared","version":"0.0.0","type":"module","main":"index.js"}' > node_modules/@toodee/shared/package.json
-COPY --from=build /app/packages/shared/dist/ ./node_modules/@toodee/shared/
+    printf '{"name":"@toodee/shared","version":"0.0.0","type":"module","main":"index.js"}' > node_modules/@toodee/shared/package.json && \
+    cp -r ./shared-dist/* ./node_modules/@toodee/shared/ && \
+    rm -rf ./shared-dist
 EXPOSE 2567
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s CMD wget -qO- http://127.0.0.1:2567/health || exit 1
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/server/src/index.js"]
