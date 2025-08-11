@@ -235,7 +235,7 @@ export class GameRoom extends Room<WorldState> {
     this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
     
     // Spawn a training dummy near town when someone buys potions
-    if (Math.random() < 0.3) { // 30% chance
+    if (Math.random() < SPAWN_DUMMY_PROBABILITY) { // 30% chance
       this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
     }
   }
