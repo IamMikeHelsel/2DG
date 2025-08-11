@@ -8,6 +8,10 @@ export class Player extends Schema {
   @type("uint8") dir: number = 0; // 0 up,1 right,2 down,3 left
   // last processed input
   @type("uint32") lastSeq: number = 0;
+  @type("uint16") hp: number = 0;
+  @type("uint16") maxHp: number = 0;
+  @type("uint32") gold: number = 0;
+  @type("uint16") pots: number = 0; // small potions
 }
 
 export class GameState extends Schema {

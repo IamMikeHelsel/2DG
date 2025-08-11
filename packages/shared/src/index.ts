@@ -22,3 +22,27 @@ export enum Tile {
   Land = 1,
   Rock = 2
 }
+
+// Chat
+export interface ChatMessage {
+  from: string;
+  text: string;
+  ts: number; // epoch ms
+}
+
+// Shop / NPCs
+export interface ShopItem {
+  id: string;
+  name: string;
+  price: number; // gold
+}
+
+export const SHOP_ITEMS: ShopItem[] = [
+  { id: "pot_small", name: "Small Potion", price: 5 }
+];
+
+// Merchant position (tile coords) near spawn
+export const NPC_MERCHANT = {
+  x: Math.floor(MAP.width * 0.45) + 2,
+  y: Math.floor(MAP.height * 0.55)
+};

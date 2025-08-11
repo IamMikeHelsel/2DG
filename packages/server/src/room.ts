@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { GameState, Player } from "./state";
-import { TICK_RATE, TILE_SIZE, MAP } from "@toodee/shared";
+import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
 import { generateMichiganish, isWalkable, Grid } from "./map";
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
@@ -9,6 +9,8 @@ export class GameRoom extends Room<GameState> {
   private inputs = new Map<string, Input>();
   private grid: Grid;
   private speed = 4; // tiles per second (server units are tiles)
+  private lastAttack = new Map<string, number>();
+  private attackCooldown = 400; // ms
 
   onCreate(options: any) {
     this.setPatchRate(1000 / 10); // send state ~10/s; interpolate on client
@@ -21,6 +23,17 @@ export class GameRoom extends Room<GameState> {
     this.onMessage("input", (client, data: Input) => {
       this.inputs.set(client.sessionId, data);
     });
+    this.onMessage("chat", (client, text: string) => {
+      const p = this.state.players.get(client.sessionId);
+      if (!p) return;
+      const clean = sanitizeChat(text);
+      if (!clean) return;
+      const msg: ChatMessage = { from: p.name || "Adventurer", text: clean, ts: Date.now() };
+      this.broadcast("chat", msg);
+    });
+    this.onMessage("attack", (client) => this.handleAttack(client.sessionId));
+    this.onMessage("shop:list", (client) => this.handleShopList(client.sessionId));
+    this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
 
     this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
   }
@@ -29,9 +42,23 @@ export class GameRoom extends Room<GameState> {
     const p = new Player();
     p.id = client.sessionId;
     p.name = options?.name || "Adventurer";
-    // spawn near center
-    p.x = Math.floor(MAP.width * 0.45);
-    p.y = Math.floor(MAP.height * 0.55);
+    p.maxHp = 100;
+    p.hp = p.maxHp;
+    p.gold = 20;
+    p.pots = 0;
+    // spawn near center (or restore from client-provided snapshot for demo persistence)
+    const rx = options?.restore?.x, ry = options?.restore?.y;
+    if (typeof rx === "number" && typeof ry === "number") {
+      const tx = clamp(Math.round(rx), 0, MAP.width - 1);
+      const ty = clamp(Math.round(ry), 0, MAP.height - 1);
+      p.x = tx;
+      p.y = ty;
+    } else {
+      p.x = Math.floor(MAP.width * 0.45);
+      p.y = Math.floor(MAP.height * 0.55);
+    }
+    if (typeof options?.restore?.gold === "number") p.gold = Math.max(0, Math.min(999999, Math.floor(options.restore.gold)));
+    if (typeof options?.restore?.pots === "number") p.pots = Math.max(0, Math.min(999, Math.floor(options.restore.pots)));
     this.state.players.set(client.sessionId, p);
   }
 
@@ -75,4 +102,91 @@ export class GameRoom extends Room<GameState> {
       p.lastSeq = inp.seq >>> 0;
     });
   }
+
+  private handleAttack(playerId: string) {
+    const now = Date.now();
+    const last = this.lastAttack.get(playerId) || 0;
+    if (now - last < this.attackCooldown) return;
+    this.lastAttack.set(playerId, now);
+
+    const attacker = this.state.players.get(playerId);
+    if (!attacker) return;
+
+    // Simple PvP hit: check 1-tile arc in front
+    const front = neighbor(attacker.x, attacker.y, attacker.dir);
+    this.state.players.forEach((target, id) => {
+      if (id === playerId) return;
+      const tx = Math.round(target.x);
+      const ty = Math.round(target.y);
+      if (tx === front.x && ty === front.y && target.hp > 0) {
+        target.hp = Math.max(0, target.hp - 25);
+        if (target.hp === 0) {
+          // respawn at town center after short delay
+          const rid = id;
+          setTimeout(() => {
+            const t = this.state.players.get(rid);
+            if (!t) return;
+            t.x = Math.floor(MAP.width * 0.45);
+            t.y = Math.floor(MAP.height * 0.55);
+            t.hp = t.maxHp;
+          }, 1500);
+        }
+      }
+    });
+  }
+
+  private isNearMerchant(p: Player) {
+    const dx = Math.abs(Math.round(p.x) - NPC_MERCHANT.x);
+    const dy = Math.abs(Math.round(p.y) - NPC_MERCHANT.y);
+    return Math.max(dx, dy) <= 2;
+  }
+
+  private handleShopList(playerId: string) {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    const payload = { items: SHOP_ITEMS, gold: p.gold, pots: p.pots, npc: NPC_MERCHANT };
+    this.clients.find(c => c.sessionId === playerId)?.send("shop:list", payload);
+  }
+
+  private handleShopBuy(playerId: string, data: { id: string; qty?: number }) {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    if (!this.isNearMerchant(p)) {
+      this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Too far from merchant" });
+      return;
+    }
+    const item = SHOP_ITEMS.find(i => i.id === data?.id);
+    const qty = Math.max(1, Math.min(99, Number(data?.qty ?? 1) | 0));
+    if (!item) {
+      this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Unknown item" });
+      return;
+    }
+    const cost = item.price * qty;
+    if (p.gold < cost) {
+      this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Not enough gold", gold: p.gold, pots: p.pots });
+      return;
+    }
+    p.gold -= cost;
+    if (item.id === "pot_small") p.pots = Math.min(999, p.pots + qty);
+    this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
+  }
 }
+
+function neighbor(x: number, y: number, dir: number) {
+  const tx = Math.round(x);
+  const ty = Math.round(y);
+  if (dir === 0) return { x: tx, y: ty - 1 };
+  if (dir === 1) return { x: tx + 1, y: ty };
+  if (dir === 2) return { x: tx, y: ty + 1 };
+  return { x: tx - 1, y: ty };
+}
+
+function sanitizeChat(s: string): string | null {
+  if (typeof s !== "string") return null;
+  s = s.replace(/\s+/g, " ").trim();
+  if (!s) return null;
+  if (s.length > 140) s = s.slice(0, 140);
+  return s;
+}
+
+function clamp(n: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, n)); }
