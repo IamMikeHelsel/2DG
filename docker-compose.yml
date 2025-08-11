@@ -1,0 +1,18 @@
+version: "3.9"
+services:
+  server:
+    build:
+      context: .
+    ports:
+      - "2567:2567"
+  client:
+    build:
+      context: .
+      dockerfile: packages/client/Dockerfile
+      args:
+        VITE_SERVER_URL: ws://server:2567
+    depends_on:
+      - server
+    ports:
+      - "5173:5173"
+
