@@ -1,0 +1,15 @@
+{
+  "name": "toodee-load-test",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Load testing tool for Toodee server",
+  "main": "load-test.js",
+  "scripts": {
+    "test": "node load-test.js",
+    "test:heavy": "PLAYERS=40 DURATION=120 node load-test.js",
+    "test:light": "PLAYERS=10 DURATION=30 node load-test.js"
+  },
+  "dependencies": {
+    "colyseus.js": "^0.15.12"
+  }
+}
