@@ -1,20 +1,20 @@
 import { Room, Client } from "colyseus";
-import { GameState, Player } from "./state";
+import { WorldState, Player, Mob } from "./state";
 import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
 import { generateMichiganish, isWalkable, Grid } from "./map";
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
 
-export class GameRoom extends Room<GameState> {
+export class GameRoom extends Room<WorldState> {
   private inputs = new Map<string, Input>();
-  private grid: Grid;
+  private grid!: Grid;
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
 
   onCreate(options: any) {
     this.setPatchRate(1000 / 10); // send state ~10/s; interpolate on client
-    this.setState(new GameState());
+    this.setState(new WorldState());
     this.state.width = MAP.width;
     this.state.height = MAP.height;
 
@@ -112,8 +112,27 @@ export class GameRoom extends Room<GameState> {
     const attacker = this.state.players.get(playerId);
     if (!attacker) return;
 
-    // Simple PvP hit: check 1-tile arc in front
+    // Hit check: 1-tile arc in front, mobs first then players
     const front = neighbor(attacker.x, attacker.y, attacker.dir);
+    // Attack mobs
+    let hitSomething = false;
+    this.state.mobs.forEach((m, key) => {
+      const mx = Math.round(m.x), my = Math.round(m.y);
+      if (mx === front.x && my === front.y && m.hp > 0 && !hitSomething) {
+        m.hp = Math.max(0, m.hp - 30);
+        hitSomething = true;
+        if (m.hp === 0) {
+          // reward attacker
+          attacker.hp = Math.min(attacker.maxHp, attacker.hp + 10);
+          attacker.gold = Math.min(999999, attacker.gold + 10);
+          const id = key;
+          setTimeout(() => this.respawnMob(id), 2000);
+        }
+      }
+    });
+    if (hitSomething) return;
+
+    // Then players
     this.state.players.forEach((target, id) => {
       if (id === playerId) return;
       const tx = Math.round(target.x);
@@ -135,6 +154,23 @@ export class GameRoom extends Room<GameState> {
     });
   }
 
+  private spawnMob(pos: { x: number; y: number }) {
+    const m = new Mob();
+    m.id = `mob_${Math.random().toString(36).slice(2, 8)}`;
+    m.x = pos.x;
+    m.y = pos.y;
+    m.maxHp = 60;
+    m.hp = m.maxHp;
+    this.state.mobs.set(m.id, m);
+  }
+
+  private respawnMob(id: string) {
+    const m = this.state.mobs.get(id);
+    if (!m) return;
+    // simple respawn at original spot
+    m.hp = m.maxHp;
+  }
+
   private isNearMerchant(p: Player) {
     const dx = Math.abs(Math.round(p.x) - NPC_MERCHANT.x);
     const dy = Math.abs(Math.round(p.y) - NPC_MERCHANT.y);
@@ -154,6 +190,8 @@ export class GameRoom extends Room<GameState> {
     if (!this.isNearMerchant(p)) {
       this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Too far from merchant" });
       return;
+    // Spawn a training dummy near town
+    this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
     }
     const item = SHOP_ITEMS.find(i => i.id === data?.id);
     const qty = Math.max(1, Math.min(99, Number(data?.qty ?? 1) | 0));

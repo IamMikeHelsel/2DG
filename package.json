@@ -5,7 +5,14 @@
   "scripts": {
     "build": "pnpm -r build",
     "dev": "echo \"Run packages individually: pnpm -F @toodee/server dev & pnpm -F @toodee/client dev\"",
+    "dev:server": "pnpm -F @toodee/server dev",
+    "dev:client": "pnpm -F @toodee/client dev",
+    "dev:all": "concurrently -k -n server,client -c cyan,magenta \"pnpm -F @toodee/server dev\" \"VITE_SERVER_URL=ws://localhost:2567 pnpm -F @toodee/client dev\"",
     "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
 }

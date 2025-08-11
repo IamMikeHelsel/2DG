@@ -4,7 +4,7 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
-RUN pnpm i --frozen-lockfile
+RUN pnpm i --no-frozen-lockfile
 RUN pnpm -F @toodee/shared build && pnpm -F @toodee/server build
 
 FROM node:20-alpine as runtime

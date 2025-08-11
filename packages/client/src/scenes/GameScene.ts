@@ -7,6 +7,7 @@ type ServerPlayer = { id: string; x: number; y: number; dir: number; };
 export class GameScene extends Phaser.Scene {
   private room?: any;
   private players = new Map<string, Phaser.GameObjects.Rectangle>();
+  private mobs = new Map<string, { body: Phaser.GameObjects.Rectangle; hp: Phaser.GameObjects.Rectangle }>();
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private seq = 0;
@@ -18,6 +19,7 @@ export class GameScene extends Phaser.Scene {
   private goldText?: Phaser.GameObjects.Text;
   private shopEl?: HTMLDivElement;
   private splashImage?: Phaser.GameObjects.Image;
+  private toastRoot?: HTMLDivElement;
 
   constructor() { super("game"); }
 
@@ -40,7 +42,12 @@ export class GameScene extends Phaser.Scene {
     const client = createClient();
     const restore = loadSave();
     const name = restore?.name || randomName();
-    this.room = await client.joinOrCreate("toodee", { name, restore });
+    try {
+      this.room = await client.joinOrCreate("toodee", { name, restore });
+    } catch (err) {
+      this.showToast("Cannot connect to server. Check server and VITE_SERVER_URL.", "error");
+      return; // keep splash visible so restart is obvious
+    }
 
     // listen to state changes
     this.room.state.players.onAdd = (p: ServerPlayer, key: string) => {
@@ -76,6 +83,31 @@ export class GameScene extends Phaser.Scene {
       }
     };
 
+    // mobs
+    this.room.state.mobs?.onAdd?.((m: any, key: string) => {
+      const body = this.add.rectangle(m.x * TILE_SIZE, m.y * TILE_SIZE, TILE_SIZE, TILE_SIZE, 0xd46a6a).setOrigin(0.5);
+      body.setStrokeStyle(2, 0x2a0f0f);
+      const hp = this.add.rectangle(m.x * TILE_SIZE, m.y * TILE_SIZE - TILE_SIZE * 0.6, TILE_SIZE, 4, 0x6be06b).setOrigin(0.5, 0.5);
+      this.mobs.set(key, { body, hp });
+    });
+    this.room.state.mobs?.onRemove?.((_: any, key: string) => {
+      const m = this.mobs.get(key);
+      m?.body.destroy();
+      m?.hp.destroy();
+      this.mobs.delete(key);
+    });
+    this.room.state.mobs?.onChange?.((m: any, key: string) => {
+      const obj = this.mobs.get(key);
+      if (!obj) return;
+      obj.body.x = Math.round(m.x * TILE_SIZE);
+      obj.body.y = Math.round(m.y * TILE_SIZE);
+      obj.hp.x = obj.body.x;
+      obj.hp.y = obj.body.y - TILE_SIZE * 0.6;
+      const frac = Math.max(0, Math.min(1, (m.hp ?? 0) / (m.maxHp || 1)));
+      obj.hp.width = TILE_SIZE * frac;
+      obj.hp.fillColor = frac > 0.5 ? 0x6be06b : frac > 0.25 ? 0xe0c36b : 0xe06b6b;
+    });
+
     // send input at ~20 Hz
     this.time.addEvent({ delay: 50, loop: true, callback: this.sendInput, callbackScope: this });
     this.scale.on("resize", () => this.drawMap());
@@ -94,10 +126,11 @@ export class GameScene extends Phaser.Scene {
     this.room.onMessage("shop:list", (payload: any) => this.showShop(payload));
     this.room.onMessage("shop:result", (payload: any) => this.updateShopResult(payload));
 
-    // Fade out splash
+    // Fade out splash and show connected toast
     if (this.splashImage) {
       this.tweens.add({ targets: this.splashImage, duration: 600, alpha: 0, onComplete: () => this.splashImage?.destroy() });
     }
+    this.showToast("Connected to server", "ok");
   }
 
   private drawMap() {
@@ -232,6 +265,51 @@ export class GameScene extends Phaser.Scene {
       // re-request to refresh counts
       this.room?.send("shop:list");
     }
+  }
+
+  private showToast(text: string, kind: "ok" | "error" = "ok") {
+    if (!this.toastRoot) {
+      const root = document.createElement("div");
+      Object.assign(root.style, {
+        position: "absolute",
+        top: "12px",
+        right: "12px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "8px",
+        zIndex: 15 as any,
+        pointerEvents: "none"
+      });
+      document.body.appendChild(root);
+      this.toastRoot = root;
+    }
+    const el = document.createElement("div");
+    const bg = kind === "ok" ? "rgba(28, 68, 44, 0.9)" : "rgba(84, 28, 28, 0.9)";
+    const border = kind === "ok" ? "#4aa96c" : "#d46a6a";
+    Object.assign(el.style, {
+      background: bg,
+      border: `1px solid ${border}`,
+      color: "#eaf3ef",
+      padding: "8px 10px",
+      borderRadius: "6px",
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      fontSize: "12px",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+      opacity: "0",
+      transform: "translateY(-6px)",
+      transition: "opacity 180ms ease, transform 180ms ease"
+    } as any);
+    el.textContent = text;
+    this.toastRoot!.appendChild(el);
+    requestAnimationFrame(() => {
+      el.style.opacity = "1";
+      el.style.transform = "translateY(0)";
+    });
+    setTimeout(() => {
+      el.style.opacity = "0";
+      el.style.transform = "translateY(-6px)";
+      setTimeout(() => el.remove(), 220);
+    }, 2000);
   }
 
   private sendInput() {

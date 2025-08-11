@@ -20,3 +20,15 @@ export class GameState extends Schema {
   @type("uint16") width: number = 0;
   @type("uint16") height: number = 0;
 }
+
+export class Mob extends Schema {
+  @type("string") id: string = "";
+  @type("float32") x: number = 0;
+  @type("float32") y: number = 0;
+  @type("uint16") hp: number = 0;
+  @type("uint16") maxHp: number = 0;
+}
+
+export class WorldState extends GameState {
+  @type({ map: Mob }) mobs = new MapSchema<Mob>();
+}
