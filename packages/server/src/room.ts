@@ -1,7 +1,10 @@
-import { Room, Client } from "colyseus";
-import { WorldState, Player, Mob } from "./state";
-import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
-import { generateMichiganish, isWalkable, Grid } from "./map";
+import colyseus from "colyseus";
+import { WorldState, Player, Mob } from "./state.js";
+import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
+import { generateMichiganish, isWalkable, type Grid } from "./map.js";
+
+const { Room } = colyseus;
+type Client = colyseus.Client;
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
 
