@@ -2,6 +2,8 @@ import Phaser from "phaser";
 import { createClient } from "../net";
 import { TILE_SIZE, MAP, ChatMessage } from "@toodee/shared";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
+import { LightingSystem } from "../systems/LightingSystem";
+import { ParticleEffects } from "../systems/ParticleEffects";
 
 type ServerPlayer = { 
   id: string; 
@@ -34,6 +36,12 @@ export class ImprovedGameScene extends Phaser.Scene {
   private splashImage?: Phaser.GameObjects.Image;
   private toastRoot?: HTMLDivElement;
   private terrainMap: number[][] = [];
+  
+  // Lighting and VFX systems
+  private lightingSystem!: LightingSystem;
+  private particleEffects!: ParticleEffects;
+  private torches: Phaser.GameObjects.Graphics[] = [];
+  private crystals: Phaser.GameObjects.Graphics[] = [];
 
   constructor() { 
     super("improved-game"); 
@@ -53,6 +61,10 @@ export class ImprovedGameScene extends Phaser.Scene {
     // Remove WASD since we use chat
     this.keys = {} as any;
 
+    // Initialize lighting and particle systems
+    this.lightingSystem = new LightingSystem(this);
+    this.particleEffects = new ParticleEffects(this);
+
     // Create animation sets for sprites
     this.createAnimations();
 
@@ -61,6 +73,9 @@ export class ImprovedGameScene extends Phaser.Scene {
     this.decorLayer = this.add.graphics({ x: 0, y: 0 });
     this.decorLayer.setDepth(5);
     this.generateAndDrawMap();
+
+    // Add lighting and atmospheric effects
+    this.addLightingEffects();
 
     // Show splash
     this.splashImage = this.add.image(this.scale.width / 2, this.scale.height / 2, "splash")
@@ -119,6 +134,10 @@ export class ImprovedGameScene extends Phaser.Scene {
         this.cameras.main.setZoom(3);
         this.cameras.main.setBounds(0, 0, MAP.width * TILE_SIZE, MAP.height * TILE_SIZE, true);
         
+        // Add player light
+        const playerLight = this.lightingSystem.createPlayerLight(`player_${key}`, p.x * TILE_SIZE, p.y * TILE_SIZE);
+        this.lightingSystem.addLight(playerLight);
+        
         // UI
         this.hpText = this.add.text(12, 12, "HP", { 
           color: "#ffffff", 
@@ -148,6 +167,9 @@ export class ImprovedGameScene extends Phaser.Scene {
       this.players.get(key)?.destroy();
       this.players.delete(key);
       this.playerSprites.delete(key);
+      
+      // Remove player light
+      this.lightingSystem.removeLight(`player_${key}`);
     };
 
     this.room.state.players.onChange = (p: ServerPlayer, key: string) => {
@@ -195,6 +217,9 @@ export class ImprovedGameScene extends Phaser.Scene {
         hpBar.setScale(hpPercent, 1);
         hpBar.setFillStyle(hpPercent > 0.5 ? 0x00ff00 : hpPercent > 0.25 ? 0xffaa00 : 0xff0000);
       }
+      
+      // Update player light position
+      this.lightingSystem.updateLight(`player_${key}`, { x: targetX, y: targetY });
       
       if (isLocal) {
         this.hpText?.setText(`HP: ${p.hp}/${p.maxHp}`);
@@ -271,6 +296,122 @@ export class ImprovedGameScene extends Phaser.Scene {
     }
     
     this.showToast("Connected!", "ok");
+  }
+  
+  update() {
+    // Update lighting system each frame
+    this.lightingSystem.update();
+  }
+  
+  private addLightingEffects() {
+    // Add torches around the map
+    this.addTorches();
+    
+    // Add glowing crystals
+    this.addCrystals();
+    
+    // Add ambient dust particles
+    this.addAmbientEffects();
+  }
+  
+  private addTorches() {
+    const torchPositions = [
+      { x: 20, y: 20 },
+      { x: 60, y: 40 },
+      { x: 40, y: 70 },
+      { x: 80, y: 30 },
+      { x: 25, y: 55 },
+      { x: 70, y: 65 }
+    ];
+    
+    torchPositions.forEach((pos, i) => {
+      // Only place torches on land
+      if (this.terrainMap[pos.y] && this.terrainMap[pos.y][pos.x] === 1) {
+        const worldX = pos.x * TILE_SIZE + TILE_SIZE/2;
+        const worldY = pos.y * TILE_SIZE + TILE_SIZE/2;
+        
+        // Create torch visual
+        const torch = this.add.graphics();
+        torch.setDepth(6);
+        
+        // Torch post
+        torch.fillStyle(0x654321, 1);
+        torch.fillRect(worldX - 2, worldY - 5, 4, 20);
+        
+        // Torch flame
+        torch.fillStyle(0xff6600, 1);
+        torch.fillEllipse(worldX, worldY - 8, 8, 12);
+        torch.fillStyle(0xffaa00, 1);
+        torch.fillEllipse(worldX, worldY - 6, 5, 8);
+        
+        this.torches.push(torch);
+        
+        // Add torch light
+        const torchLight = this.lightingSystem.createTorchLight(`torch_${i}`, worldX, worldY);
+        this.lightingSystem.addLight(torchLight);
+        
+        // Add torch particles
+        this.particleEffects.createTorchParticles(`torch_particles_${i}`, worldX, worldY - 8);
+      }
+    });
+  }
+  
+  private addCrystals() {
+    const crystalPositions = [
+      { x: 35, y: 25, color: 0x00ffff },
+      { x: 55, y: 50, color: 0xff00ff },
+      { x: 30, y: 65, color: 0x00ff00 },
+      { x: 75, y: 45, color: 0xffff00 }
+    ];
+    
+    crystalPositions.forEach((pos, i) => {
+      // Only place crystals on land
+      if (this.terrainMap[pos.y] && this.terrainMap[pos.y][pos.x] === 1) {
+        const worldX = pos.x * TILE_SIZE + TILE_SIZE/2;
+        const worldY = pos.y * TILE_SIZE + TILE_SIZE/2;
+        
+        // Create crystal visual
+        const crystal = this.add.graphics();
+        crystal.setDepth(6);
+        
+        // Crystal base
+        crystal.fillStyle(0x333333, 1);
+        crystal.fillEllipse(worldX, worldY + 8, 12, 6);
+        
+        // Crystal structure
+        crystal.fillStyle(pos.color, 0.8);
+        crystal.beginPath();
+        crystal.moveTo(worldX, worldY - 12);
+        crystal.lineTo(worldX - 6, worldY + 6);
+        crystal.lineTo(worldX + 6, worldY + 6);
+        crystal.closePath();
+        crystal.fillPath();
+        
+        // Crystal highlight
+        crystal.fillStyle(0xffffff, 0.6);
+        crystal.beginPath();
+        crystal.moveTo(worldX - 1, worldY - 10);
+        crystal.lineTo(worldX - 4, worldY + 4);
+        crystal.lineTo(worldX - 2, worldY + 4);
+        crystal.closePath();
+        crystal.fillPath();
+        
+        this.crystals.push(crystal);
+        
+        // Add crystal light
+        const crystalLight = this.lightingSystem.createCrystalLight(`crystal_${i}`, worldX, worldY, pos.color);
+        this.lightingSystem.addLight(crystalLight);
+        
+        // Add crystal particles
+        this.particleEffects.createCrystalParticles(`crystal_particles_${i}`, worldX, worldY - 6, pos.color);
+      }
+    });
+  }
+  
+  private addAmbientEffects() {
+    // Add ambient dust particles across the visible area
+    const bounds = new Phaser.Geom.Rectangle(0, 0, MAP.width * TILE_SIZE, MAP.height * TILE_SIZE);
+    this.particleEffects.createAmbientDust('ambient_dust', bounds);
   }
 
   private createAnimations() {
