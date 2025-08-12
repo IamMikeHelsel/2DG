@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { createClient } from "../net";
 import { TILE_SIZE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS } from "@toodee/shared";
 
-type ServerPlayer = { id: string; x: number; y: number; dir: number; founderTier?: string; displayTitle?: string; chatColor?: string; unlockedRewards?: string[]; };
+type ServerPlayer = { id: string; x: number; y: number; dir: number; founderTier?: string; displayTitle?: string; chatColor?: string; unlockedRewards?: string[]; iframeUntil?: number; };
 
 export class GameScene extends Phaser.Scene {
   private room?: any;
@@ -78,6 +78,18 @@ export class GameScene extends Phaser.Scene {
       // Simple snap (can smooth later)
       r.x = Math.round(p.x * TILE_SIZE);
       r.y = Math.round(p.y * TILE_SIZE);
+      
+      // Handle I-frames visual effect
+      const now = Date.now();
+      if (p.iframeUntil && now < p.iframeUntil) {
+        // Flash player during I-frames
+        const flashSpeed = 100; // ms per flash
+        const shouldShow = Math.floor(now / flashSpeed) % 2 === 0;
+        r.setAlpha(shouldShow ? 0.3 : 1.0);
+      } else {
+        r.setAlpha(1.0);
+      }
+      
       if (key === this.room.sessionId) {
         const hp = p.hp ?? 0;
         const maxHp = p.maxHp ?? 0;
@@ -123,6 +135,10 @@ export class GameScene extends Phaser.Scene {
     // chat UI
     this.initChatUI();
     this.room.onMessage("chat", (msg: ChatMessage) => this.appendChat(msg));
+
+    // Handle combat feedback
+    this.room.onMessage("combat:hit", (data: any) => this.handleCombatHit(data));
+    this.room.onMessage("combat:drop", (data: any) => this.handleCombatDrop(data));
 
     // attack input
     const space = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -580,6 +596,61 @@ export class GameScene extends Phaser.Scene {
       const fakePlayerId = `player_${Date.now()}`;
       this.room?.send("referral", { referredPlayerId: fakePlayerId });
     }
+  }
+
+  private handleCombatHit(data: any) {
+    const { damage, x, y, type, attackerId } = data;
+    
+    // Show floating damage number
+    this.showDamageNumber(x * TILE_SIZE, y * TILE_SIZE, damage, type === "player" ? 0xff4444 : 0xffaa44);
+    
+    // Screen shake if local player is involved
+    if (attackerId === this.room?.sessionId || data.targetId === this.room?.sessionId) {
+      this.cameras.main.shake(100, 0.02);
+    }
+    
+    // Attack animation flash for attacker
+    const attackerRect = this.players.get(attackerId);
+    if (attackerRect) {
+      // Brief white flash
+      const originalColor = attackerRect.fillColor;
+      attackerRect.setFillStyle(0xffffff);
+      this.time.delayedCall(50, () => {
+        attackerRect.setFillStyle(originalColor);
+      });
+    }
+  }
+  
+  private handleCombatDrop(data: any) {
+    const { type, x, y } = data;
+    
+    // Show floating pickup text
+    if (type === "potion") {
+      this.showDamageNumber(x * TILE_SIZE, y * TILE_SIZE, "Potion!", 0x44ff44);
+    }
+  }
+  
+  private showDamageNumber(x: number, y: number, text: string | number, color: number) {
+    const damageText = this.add.text(x, y - 16, text.toString(), {
+      fontSize: '14px',
+      color: `#${color.toString(16).padStart(6, '0')}`,
+      stroke: '#000000',
+      strokeThickness: 2,
+      fontFamily: 'monospace'
+    });
+    
+    damageText.setOrigin(0.5, 0.5);
+    damageText.setDepth(50);
+    
+    // Animate floating upward and fade out
+    this.tweens.add({
+      targets: damageText,
+      y: y - 40,
+      alpha: 0,
+      duration: 800,
+      ease: 'Power2',
+      onComplete: () => damageText.destroy()
+    });
   }
 }
 

@@ -2,6 +2,16 @@ export const TILE_SIZE = 32;
 export const TICK_RATE = 20; // server ticks per second
 export const MAX_PLAYERS_PER_ROOM = 80;
 
+// Combat constants
+export const COMBAT = {
+  ATTACK_COOLDOWN: 400, // ms
+  IFRAME_DURATION: 500, // ms of invincibility after taking damage
+  PLAYER_DAMAGE: 25,
+  MOB_DAMAGE: 30,
+  MOB_GOLD_DROP: 10,
+  MOB_HP_HEAL: 10
+};
+
 export type Direction = 'up' | 'down' | 'left' | 'right';
 
 export interface InputMessage {
