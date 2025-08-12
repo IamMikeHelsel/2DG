@@ -171,3 +171,55 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
 export const EARLY_BIRD_LIMIT = 50;
 export const BETA_TEST_PERIOD_DAYS = 14;
 export const BUG_HUNTER_REPORTS_REQUIRED = 5;
+
+// Authentication & Security Types
+export interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string;
+  isGuest: boolean;
+  emailVerified: boolean;
+  createdAt: string;
+  lastLoginAt: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+  rememberMe?: boolean;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  displayName: string;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  user?: AuthUser;
+  token?: string;
+  refreshToken?: string;
+  error?: string;
+  message?: string;
+}
+
+export interface TokenPayload {
+  userId: string;
+  email: string;
+  isGuest: boolean;
+  iat: number;
+  exp: number;
+}
+
+export interface RateLimitError {
+  error: "RATE_LIMITED";
+  message: string;
+  retryAfter: number;
+}
+
+export interface ValidationError {
+  error: "VALIDATION_ERROR";
+  message: string;
+  fields?: Record<string, string[]>;
+}
