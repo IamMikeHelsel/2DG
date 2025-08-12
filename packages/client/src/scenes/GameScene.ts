@@ -249,7 +249,7 @@ export class GameScene extends Phaser.Scene {
     root.appendChild(goldEl);
     const item = SHOP_ITEMS[0];
     const row = document.createElement("div");
-    row.textContent = `${item.name} — ${item.price}g (You: ${pots})`;
+    row.textContent = `${item.name} — ${item.buyPrice}g (You: ${pots})`;
     row.style.marginBottom = "8px";
     root.appendChild(row);
     const buy1 = document.createElement("button");

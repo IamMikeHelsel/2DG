@@ -34,11 +34,29 @@ export interface ChatMessage {
 export interface ShopItem {
   id: string;
   name: string;
-  price: number; // gold
+  buyPrice: number; // gold to buy from merchant
+  sellPrice: number; // gold to sell to merchant (with floor)
+  description: string;
+  type: 'potion' | 'gear';
 }
 
 export const SHOP_ITEMS: ShopItem[] = [
-  { id: "pot_small", name: "Small Potion", price: 5 }
+  { 
+    id: "pot_health", 
+    name: "Health Potion", 
+    buyPrice: 10, 
+    sellPrice: 6, 
+    description: "Restores 50 HP",
+    type: 'potion'
+  },
+  { 
+    id: "pot_mana", 
+    name: "Mana Potion", 
+    buyPrice: 8, 
+    sellPrice: 5, 
+    description: "Restores mana (placeholder)",
+    type: 'potion'
+  }
 ];
 
 // Merchant position (tile coords) near spawn

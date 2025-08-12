@@ -36,6 +36,8 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("attack", (client) => this.handleAttack(client.sessionId));
     this.onMessage("shop:list", (client) => this.handleShopList(client.sessionId));
     this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
+    this.onMessage("shop:sell", (client, data: { id: string; qty?: number }) => this.handleShopSell(client.sessionId, data));
+    this.onMessage("use:potion", (client, data: { type: 'health' | 'mana' }) => this.handleUsePotion(client.sessionId, data));
     this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
     this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
 
@@ -50,6 +52,7 @@ export class GameRoom extends Room<WorldState> {
     p.hp = p.maxHp;
     p.gold = 20;
     p.pots = 0;
+    p.manaPots = 0;
     
     // Initialize founder rewards tracking
     p.joinTimestamp = Date.now();
@@ -81,6 +84,7 @@ export class GameRoom extends Room<WorldState> {
     }
     if (typeof options?.restore?.gold === "number") p.gold = Math.max(0, Math.min(999999, Math.floor(options.restore.gold)));
     if (typeof options?.restore?.pots === "number") p.pots = Math.max(0, Math.min(999, Math.floor(options.restore.pots)));
+    if (typeof options?.restore?.manaPots === "number") p.manaPots = Math.max(0, Math.min(999, Math.floor(options.restore.manaPots)));
     this.state.players.set(client.sessionId, p);
   }
 
@@ -202,7 +206,15 @@ export class GameRoom extends Room<WorldState> {
   private handleShopList(playerId: string) {
     const p = this.state.players.get(playerId);
     if (!p) return;
-    const payload = { items: SHOP_ITEMS, gold: p.gold, pots: p.pots, npc: NPC_MERCHANT };
+    const payload = { 
+      items: SHOP_ITEMS, 
+      playerGold: p.gold, 
+      playerInventory: {
+        healthPots: p.pots,
+        manaPots: p.manaPots
+      },
+      npc: NPC_MERCHANT 
+    };
     this.clients.find(c => c.sessionId === playerId)?.send("shop:list", payload);
   }
 
@@ -212,23 +224,83 @@ export class GameRoom extends Room<WorldState> {
     if (!this.isNearMerchant(p)) {
       this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Too far from merchant" });
       return;
-    // Spawn a training dummy near town
-    this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
     }
+    
     const item = SHOP_ITEMS.find(i => i.id === data?.id);
     const qty = Math.max(1, Math.min(99, Number(data?.qty ?? 1) | 0));
     if (!item) {
       this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Unknown item" });
       return;
     }
-    const cost = item.price * qty;
+    
+    const cost = item.buyPrice * qty;
     if (p.gold < cost) {
-      this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Not enough gold", gold: p.gold, pots: p.pots });
+      this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { 
+        ok: false, 
+        reason: "Not enough gold", 
+        playerGold: p.gold,
+        playerInventory: { healthPots: p.pots, manaPots: p.manaPots }
+      });
       return;
     }
+    
     p.gold -= cost;
-    if (item.id === "pot_small") p.pots = Math.min(999, p.pots + qty);
-    this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
+    if (item.id === "pot_health") p.pots = Math.min(999, p.pots + qty);
+    if (item.id === "pot_mana") p.manaPots = Math.min(999, p.manaPots + qty);
+    
+    this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { 
+      ok: true, 
+      action: 'buy',
+      item: item,
+      qty: qty,
+      playerGold: p.gold,
+      playerInventory: { healthPots: p.pots, manaPots: p.manaPots }
+    });
+  }
+
+  private handleShopSell(playerId: string, data: { id: string; qty?: number }) {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    if (!this.isNearMerchant(p)) {
+      this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Too far from merchant" });
+      return;
+    }
+    
+    const item = SHOP_ITEMS.find(i => i.id === data?.id);
+    const qty = Math.max(1, Math.min(99, Number(data?.qty ?? 1) | 0));
+    if (!item) {
+      this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Unknown item" });
+      return;
+    }
+    
+    let currentStock = 0;
+    if (item.id === "pot_health") currentStock = p.pots;
+    if (item.id === "pot_mana") currentStock = p.manaPots;
+    
+    if (currentStock < qty) {
+      this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { 
+        ok: false, 
+        reason: "Not enough items to sell",
+        playerGold: p.gold,
+        playerInventory: { healthPots: p.pots, manaPots: p.manaPots }
+      });
+      return;
+    }
+    
+    const earnings = item.sellPrice * qty;
+    p.gold = Math.min(999999, p.gold + earnings);
+    
+    if (item.id === "pot_health") p.pots = Math.max(0, p.pots - qty);
+    if (item.id === "pot_mana") p.manaPots = Math.max(0, p.manaPots - qty);
+    
+    this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { 
+      ok: true, 
+      action: 'sell',
+      item: item,
+      qty: qty,
+      playerGold: p.gold,
+      playerInventory: { healthPots: p.pots, manaPots: p.manaPots }
+    });
   }
 
   private determineFounderTier(joinOrder: number, joinTimestamp: number): FounderTier {
@@ -354,6 +426,60 @@ export class GameRoom extends Room<WorldState> {
       this.clients.find(c => c.sessionId === playerId)?.send("anniversary:reward", {
         reward: reward,
         message: `Anniversary reward unlocked: ${reward.name}!`
+      });
+    }
+  }
+
+  private handleUsePotion(playerId: string, data: { type: 'health' | 'mana' }) {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    
+    if (data.type === 'health') {
+      if (p.pots <= 0) {
+        this.clients.find(c => c.sessionId === playerId)?.send("potion:result", { 
+          ok: false, 
+          reason: "No health potions available" 
+        });
+        return;
+      }
+      
+      if (p.hp >= p.maxHp) {
+        this.clients.find(c => c.sessionId === playerId)?.send("potion:result", { 
+          ok: false, 
+          reason: "Already at full health" 
+        });
+        return;
+      }
+      
+      p.pots--;
+      const healing = 50;
+      const oldHp = p.hp;
+      p.hp = Math.min(p.maxHp, p.hp + healing);
+      const actualHealing = p.hp - oldHp;
+      
+      this.clients.find(c => c.sessionId === playerId)?.send("potion:result", { 
+        ok: true, 
+        type: 'health',
+        healing: actualHealing,
+        newHp: p.hp,
+        potionsLeft: p.pots
+      });
+    } else if (data.type === 'mana') {
+      if (p.manaPots <= 0) {
+        this.clients.find(c => c.sessionId === playerId)?.send("potion:result", { 
+          ok: false, 
+          reason: "No mana potions available" 
+        });
+        return;
+      }
+      
+      p.manaPots--;
+      // Placeholder - no mana system yet, just consume the potion
+      this.clients.find(c => c.sessionId === playerId)?.send("potion:result", { 
+        ok: true, 
+        type: 'mana',
+        message: "Mana restored (placeholder)",
+        potionsLeft: p.manaPots
       });
     }
   }

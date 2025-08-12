@@ -14,10 +14,9 @@ export const NPC_CONFIGS: NPCConfig[] = [
         text: "Welcome, traveler! I have the finest potions in all the land. Would you like to see my wares?",
         responses: [
           {
-            text: "Show me your potions",
+            text: "🛍️ Open Shop",
             action: () => {
-              // This will be handled by the shop system
-              console.log("Opening shop...");
+              // This will trigger shop opening - handled by handleNPCInteraction
             }
           },
           {
@@ -25,10 +24,29 @@ export const NPC_CONFIGS: NPCConfig[] = [
             nextDialogue: "about_town"
           },
           {
+            text: "What do you sell?",
+            nextDialogue: "about_items"
+          },
+          {
             text: "Goodbye",
             action: () => {
               console.log("Closing dialogue");
             }
+          }
+        ]
+      },
+      about_items: {
+        text: "I sell the finest health and mana potions! Health potions restore 50 HP instantly, perfect for adventurers. Mana potions help with magical abilities. You can also sell any extras back to me, though at a fair market rate.",
+        responses: [
+          {
+            text: "🛍️ Show me your shop",
+            action: () => {
+              // This will trigger shop opening
+            }
+          },
+          {
+            text: "Back to main menu",
+            nextDialogue: "default"
           }
         ]
       },

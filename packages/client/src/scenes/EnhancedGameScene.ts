@@ -20,6 +20,7 @@ type ServerPlayer = {
   maxHp: number;
   gold: number;
   pots: number;
+  manaPots: number;
 };
 
 type ServerMob = {
@@ -143,7 +144,32 @@ export class EnhancedGameScene extends Phaser.Scene {
   private handleNPCInteraction(npc: NPC) {
     // Special handling for merchant
     if (npc.id === 'merchant') {
-      this.room?.send("shop:list");
+      // Show dialogue first, then shop responses will trigger shop:list
+      const dialogue = npc.getCurrentDialogue();
+      if (dialogue) {
+        // Create enhanced dialogue with shop opening capability
+        const enhancedDialogue = {
+          ...dialogue,
+          responses: dialogue.responses?.map(response => ({
+            ...response,
+            action: response.text.includes('Shop') || response.text.includes('shop') || response.text.includes('🛍️') ? 
+              (() => {
+                // Close dialogue and open shop
+                this.dialogueUI.hide();
+                setTimeout(() => {
+                  this.room?.send("shop:list");
+                }, 100);
+              }) : response.action
+          }))
+        };
+        
+        this.dialogueUI.show(npc.name, enhancedDialogue, () => {
+          // Dialogue closed
+        });
+      } else {
+        // Fallback: just open shop directly
+        this.room?.send("shop:list");
+      }
       return;
     }
 
@@ -255,6 +281,9 @@ export class EnhancedGameScene extends Phaser.Scene {
     // Shop handlers
     this.room.onMessage("shop:list", (payload: any) => this.showShop(payload));
     this.room.onMessage("shop:result", (payload: any) => this.updateShopResult(payload));
+    
+    // Potion handlers
+    this.room.onMessage("potion:result", (payload: any) => this.handlePotionResult(payload));
   }
 
   private setupInputHandling() {
@@ -273,6 +302,16 @@ export class EnhancedGameScene extends Phaser.Scene {
     // Interact
     this.input.keyboard?.on('keydown-E', () => {
       this.tryInteract();
+    });
+
+    // Use health potion
+    this.input.keyboard?.on('keydown-R', () => {
+      this.room?.send("use:potion", { type: "health" });
+    });
+
+    // Use mana potion (placeholder)
+    this.input.keyboard?.on('keydown-B', () => {
+      this.room?.send("use:potion", { type: "mana" });
     });
 
     // Chat
@@ -352,7 +391,7 @@ export class EnhancedGameScene extends Phaser.Scene {
   private updatePlayerStats(p: ServerPlayer) {
     this.hpText?.setText(`HP: ${p.hp}/${p.maxHp}`);
     this.goldText?.setText(`Gold: ${p.gold}`);
-    this.potsText?.setText(`Potions: ${p.pots}`);
+    this.potsText?.setText(`Health: ${p.pots} | Mana: ${p.manaPots || 0}`);
   }
 
   private setupUI() {
@@ -379,7 +418,15 @@ export class EnhancedGameScene extends Phaser.Scene {
     }).setScrollFactor(0).setDepth(100);
 
     // Controls hint
-    this.add.text(12, this.scale.height - 60, "Controls: WASD/Arrows - Move | SPACE - Attack | E - Interact | ENTER - Chat", {
+    this.add.text(12, this.scale.height - 80, "Controls: WASD/Arrows - Move | SPACE - Attack | E - Interact | ENTER - Chat", {
+      fontSize: '11px',
+      color: '#aaaaaa',
+      stroke: '#000000',
+      strokeThickness: 1
+    }).setScrollFactor(0).setDepth(100);
+
+    // Potion controls hint
+    this.add.text(12, this.scale.height - 65, "Potions: R - Use Health Potion | B - Use Mana Potion", {
       fontSize: '11px',
       color: '#aaaaaa',
       stroke: '#000000',
@@ -495,43 +542,143 @@ export class EnhancedGameScene extends Phaser.Scene {
       left: "50%",
       top: "50%",
       transform: "translate(-50%, -50%)",
-      width: "300px",
-      background: "rgba(0,0,0,0.9)",
-      border: "2px solid #ffd700",
-      borderRadius: "8px",
-      padding: "16px",
+      width: "500px",
+      maxHeight: "80vh",
+      background: "rgba(0,0,0,0.95)",
+      border: "3px solid #ffd700",
+      borderRadius: "12px",
+      padding: "20px",
       color: "#e6f3ff",
-      zIndex: 20
+      zIndex: 20,
+      fontFamily: "monospace",
+      overflow: "auto"
     });
 
     root.innerHTML = `
-      <h3 style="margin: 0 0 12px 0; color: #ffd700;">Merchant Shop</h3>
-      <div id="shop-items"></div>
-      <button id="shop-close" style="margin-top: 12px; padding: 4px 8px;">Close</button>
+      <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 16px;">
+        <h3 style="margin: 0; color: #ffd700; font-size: 18px;">🛍️ Merchant Martha's Shop</h3>
+        <div style="margin-left: auto; text-align: right;">
+          <div style="color: #ffd700; font-size: 14px;">💰 Gold: ${payload.playerGold}</div>
+          <div style="color: #66ff66; font-size: 12px;">🧪 Health Potions: ${payload.playerInventory.healthPots}</div>
+          <div style="color: #6666ff; font-size: 12px;">💙 Mana Potions: ${payload.playerInventory.manaPots}</div>
+        </div>
+      </div>
+      <div id="shop-tabs" style="margin-bottom: 16px;">
+        <button id="tab-buy" class="shop-tab active" style="margin-right: 8px; padding: 8px 16px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer;">Buy Items</button>
+        <button id="tab-sell" class="shop-tab" style="padding: 8px 16px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer;">Sell Items</button>
+      </div>
+      <div id="shop-content">
+        <div id="buy-content" class="tab-content">
+          <div id="shop-items" style="margin-bottom: 12px;"></div>
+        </div>
+        <div id="sell-content" class="tab-content" style="display: none;">
+          <div id="sell-items" style="margin-bottom: 12px;"></div>
+        </div>
+      </div>
+      <div style="text-align: center; margin-top: 16px;">
+        <button id="use-health-potion" style="margin-right: 8px; padding: 6px 12px; background: #cc0000; color: white; border: none; border-radius: 4px; cursor: pointer;" ${payload.playerInventory.healthPots > 0 ? '' : 'disabled'}>Use Health Potion</button>
+        <button id="shop-close" style="padding: 8px 16px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button>
+      </div>
     `;
 
+    // Populate buy items
     const itemsContainer = root.querySelector("#shop-items") as HTMLDivElement;
     payload.items?.forEach((item: any) => {
       const itemEl = document.createElement("div");
-      itemEl.style.marginBottom = "8px";
+      Object.assign(itemEl.style, {
+        marginBottom: "12px",
+        padding: "8px",
+        border: "1px solid #444",
+        borderRadius: "6px",
+        background: "rgba(255,255,255,0.05)"
+      });
+      
+      const canAfford = payload.playerGold >= item.buyPrice;
       itemEl.innerHTML = `
-        <div>${item.name} - ${item.price} gold</div>
-        <button data-item-id="${item.id}" data-qty="1">Buy 1</button>
-        <button data-item-id="${item.id}" data-qty="5">Buy 5</button>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-weight: bold; color: #66ff99;">${item.name}</div>
+            <div style="font-size: 12px; color: #ccc; margin-bottom: 4px;">${item.description}</div>
+            <div style="color: #ffd700;">💰 Buy: ${item.buyPrice} gold</div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <button data-item-id="${item.id}" data-qty="1" data-action="buy" 
+              style="padding: 4px 8px; background: ${canAfford ? '#00aa00' : '#666'}; color: white; border: none; border-radius: 3px; cursor: ${canAfford ? 'pointer' : 'not-allowed'}; font-size: 11px;" 
+              ${canAfford ? '' : 'disabled'}>Buy 1</button>
+            <button data-item-id="${item.id}" data-qty="5" data-action="buy" 
+              style="padding: 4px 8px; background: ${payload.playerGold >= (item.buyPrice * 5) ? '#0066aa' : '#666'}; color: white; border: none; border-radius: 3px; cursor: ${payload.playerGold >= (item.buyPrice * 5) ? 'pointer' : 'not-allowed'}; font-size: 11px;"
+              ${payload.playerGold >= (item.buyPrice * 5) ? '' : 'disabled'}>Buy 5</button>
+          </div>
+        </div>
       `;
       itemsContainer.appendChild(itemEl);
     });
 
+    // Populate sell items
+    const sellContainer = root.querySelector("#sell-items") as HTMLDivElement;
+    payload.items?.forEach((item: any) => {
+      const stockAmount = item.id === 'pot_health' ? payload.playerInventory.healthPots : 
+                          item.id === 'pot_mana' ? payload.playerInventory.manaPots : 0;
+      
+      if (stockAmount > 0) {
+        const itemEl = document.createElement("div");
+        Object.assign(itemEl.style, {
+          marginBottom: "12px",
+          padding: "8px",
+          border: "1px solid #444",
+          borderRadius: "6px",
+          background: "rgba(255,255,255,0.05)"
+        });
+        
+        itemEl.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-weight: bold; color: #66ff99;">${item.name}</div>
+              <div style="font-size: 12px; color: #ccc; margin-bottom: 4px;">You have: ${stockAmount}</div>
+              <div style="color: #ffaa00;">💰 Sell: ${item.sellPrice} gold each</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <button data-item-id="${item.id}" data-qty="1" data-action="sell" 
+                style="padding: 4px 8px; background: #aa6600; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 11px;">Sell 1</button>
+              <button data-item-id="${item.id}" data-qty="${Math.min(5, stockAmount)}" data-action="sell" 
+                style="padding: 4px 8px; background: #aa4400; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 11px;"
+                ${stockAmount >= 5 ? '' : 'disabled'}>Sell ${Math.min(5, stockAmount)}</button>
+            </div>
+          </div>
+        `;
+        sellContainer.appendChild(itemEl);
+      }
+    });
+
+    if (sellContainer.children.length === 0) {
+      sellContainer.innerHTML = `<div style="color: #888; text-align: center; padding: 20px;">You have no items to sell.</div>`;
+    }
+
+    // Tab switching
     root.addEventListener("click", (e) => {
       const target = e.target as HTMLElement;
-      if (target.id === "shop-close") {
+      
+      if (target.id === "tab-buy") {
+        this.switchShopTab(root, "buy");
+      } else if (target.id === "tab-sell") {
+        this.switchShopTab(root, "sell");
+      } else if (target.id === "shop-close") {
+        root.remove();
+        this.shopEl = undefined;
+      } else if (target.id === "use-health-potion") {
+        this.room?.send("use:potion", { type: "health" });
         root.remove();
         this.shopEl = undefined;
       } else if (target.dataset.itemId) {
-        this.room?.send("shop:buy", {
+        const action = target.dataset.action;
+        const message = action === "buy" ? "shop:buy" : "shop:sell";
+        this.room?.send(message, {
           id: target.dataset.itemId,
           qty: parseInt(target.dataset.qty || "1")
         });
+        // Close shop after transaction
+        root.remove();
+        this.shopEl = undefined;
       }
     });
 
@@ -539,11 +686,62 @@ export class EnhancedGameScene extends Phaser.Scene {
     this.shopEl = root;
   }
 
+  private handlePotionResult(payload: any) {
+    if (payload.ok) {
+      if (payload.type === 'health') {
+        this.showToast(`Healed for ${payload.healing} HP!`, "ok");
+      } else if (payload.type === 'mana') {
+        this.showToast(payload.message || "Mana restored!", "ok");
+      }
+      
+      // Update local player display
+      if (this.localPlayer) {
+        const serverPlayer = this.room?.state.players.get(this.room.sessionId);
+        if (serverPlayer) {
+          this.updatePlayerStats(serverPlayer);
+        }
+      }
+    } else {
+      this.showToast(payload.reason || "Cannot use potion", "error");
+    }
+  }
+
+  private switchShopTab(root: HTMLElement, tab: "buy" | "sell") {
+    // Update tab buttons
+    const buyTab = root.querySelector("#tab-buy") as HTMLElement;
+    const sellTab = root.querySelector("#tab-sell") as HTMLElement;
+    const buyContent = root.querySelector("#buy-content") as HTMLElement;
+    const sellContent = root.querySelector("#sell-content") as HTMLElement;
+
+    if (tab === "buy") {
+      buyTab.style.background = "#0066cc";
+      sellTab.style.background = "#666";
+      buyContent.style.display = "block";
+      sellContent.style.display = "none";
+    } else {
+      buyTab.style.background = "#666";
+      sellTab.style.background = "#0066cc";
+      buyContent.style.display = "none";
+      sellContent.style.display = "block";
+    }
+  }
+
   private updateShopResult(payload: any) {
     if (payload.ok) {
-      this.showToast("Purchase successful!", "ok");
+      const action = payload.action === 'buy' ? 'purchased' : 'sold';
+      const message = `Successfully ${action} ${payload.qty} ${payload.item.name}(s)!`;
+      this.showToast(message, "ok");
+      
+      // Update local player display if it's our local player
+      if (this.localPlayer) {
+        // The server will update the actual state, but we can update our UI display immediately
+        const serverPlayer = this.room?.state.players.get(this.room.sessionId);
+        if (serverPlayer) {
+          this.updatePlayerStats(serverPlayer);
+        }
+      }
     } else {
-      this.showToast(payload.reason || "Purchase failed", "error");
+      this.showToast(payload.reason || "Transaction failed", "error");
     }
   }
 
