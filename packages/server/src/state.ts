@@ -22,6 +22,10 @@ export class Player extends Schema {
   @type("boolean") anniversaryParticipated: boolean = false;
   @type("string") displayTitle: string = "";
   @type("string") chatColor: string = "#FFFFFF";
+  
+  // Chat and party system
+  @type("string") currentChannel: string = "global";
+  @type("string") partyId: string = "";
 }
 
 export class GameState extends Schema {
