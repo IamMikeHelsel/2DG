@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { WorldState, Player, Mob } from "./state";
-import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS } from "@toodee/shared";
+import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS, COMBAT } from "@toodee/shared";
 import { generateMichiganish, isWalkable, Grid } from "./map";
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
@@ -10,7 +10,6 @@ export class GameRoom extends Room<WorldState> {
   private grid!: Grid;
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
-  private attackCooldown = 400; // ms
   private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
   private joinCounter = 0;
 
@@ -50,6 +49,7 @@ export class GameRoom extends Room<WorldState> {
     p.hp = p.maxHp;
     p.gold = 20;
     p.pots = 0;
+    p.iframeUntil = 0;
     
     // Initialize founder rewards tracking
     p.joinTimestamp = Date.now();
@@ -128,7 +128,7 @@ export class GameRoom extends Room<WorldState> {
   private handleAttack(playerId: string) {
     const now = Date.now();
     const last = this.lastAttack.get(playerId) || 0;
-    if (now - last < this.attackCooldown) return;
+    if (now - last < COMBAT.ATTACK_COOLDOWN) return;
     this.lastAttack.set(playerId, now);
 
     const attacker = this.state.players.get(playerId);
@@ -141,12 +141,35 @@ export class GameRoom extends Room<WorldState> {
     this.state.mobs.forEach((m, key) => {
       const mx = Math.round(m.x), my = Math.round(m.y);
       if (mx === front.x && my === front.y && m.hp > 0 && !hitSomething) {
-        m.hp = Math.max(0, m.hp - 30);
+        m.hp = Math.max(0, m.hp - COMBAT.MOB_DAMAGE);
         hitSomething = true;
+        
+        // Send attack feedback to all clients
+        this.broadcast("combat:hit", { 
+          type: "mob", 
+          targetId: key, 
+          damage: COMBAT.MOB_DAMAGE,
+          x: mx, 
+          y: my,
+          attackerId: playerId
+        });
+        
         if (m.hp === 0) {
           // reward attacker
-          attacker.hp = Math.min(attacker.maxHp, attacker.hp + 10);
-          attacker.gold = Math.min(999999, attacker.gold + 10);
+          attacker.hp = Math.min(attacker.maxHp, attacker.hp + COMBAT.MOB_HP_HEAL);
+          attacker.gold = Math.min(999999, attacker.gold + COMBAT.MOB_GOLD_DROP);
+          
+          // Random chance for potion drop
+          if (Math.random() < 0.3) { // 30% chance
+            attacker.pots = Math.min(999, attacker.pots + 1);
+            this.broadcast("combat:drop", {
+              type: "potion",
+              x: mx,
+              y: my,
+              playerId: playerId
+            });
+          }
+          
           const id = key;
           setTimeout(() => this.respawnMob(id), 2000);
         }
@@ -159,8 +182,24 @@ export class GameRoom extends Room<WorldState> {
       if (id === playerId) return;
       const tx = Math.round(target.x);
       const ty = Math.round(target.y);
+      
+      // Check if target is in I-frames
+      if (now < target.iframeUntil) return;
+      
       if (tx === front.x && ty === front.y && target.hp > 0) {
-        target.hp = Math.max(0, target.hp - 25);
+        target.hp = Math.max(0, target.hp - COMBAT.PLAYER_DAMAGE);
+        target.iframeUntil = now + COMBAT.IFRAME_DURATION;
+        
+        // Send attack feedback
+        this.broadcast("combat:hit", {
+          type: "player",
+          targetId: id,
+          damage: COMBAT.PLAYER_DAMAGE,
+          x: tx,
+          y: ty,
+          attackerId: playerId
+        });
+        
         if (target.hp === 0) {
           // respawn at town center after short delay
           const rid = id;
@@ -170,6 +209,7 @@ export class GameRoom extends Room<WorldState> {
             t.x = Math.floor(MAP.width * 0.45);
             t.y = Math.floor(MAP.height * 0.55);
             t.hp = t.maxHp;
+            t.iframeUntil = 0; // Clear I-frames on respawn
           }, 1500);
         }
       }

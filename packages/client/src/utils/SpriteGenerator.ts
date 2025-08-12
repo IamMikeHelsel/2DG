@@ -132,6 +132,16 @@ export class SpriteGenerator {
 
     // Create texture from canvas
     scene.textures.addCanvas(key, canvas);
+    
+    // Add frame data for proper animation support
+    scene.textures.get(key).add('__BASE', 0, 0, 0, canvas.width, canvas.height);
+    
+    // Add individual frame data
+    for (let i = 0; i < 16; i++) {
+      const frameX = (i % 4) * size;
+      const frameY = Math.floor(i / 4) * size;
+      scene.textures.get(key).add(i, 0, frameX, frameY, size, size);
+    }
   }
 
   static generateNPCSpritesheet(

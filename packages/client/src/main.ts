@@ -3,7 +3,7 @@ import { GameScene } from "./scenes/GameScene";
 import { ImprovedGameScene } from "./scenes/ImprovedGameScene";
 
 // Use improved scene with character sprites and better terrain
-const useImproved = true;
+const useImproved = false;
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.WEBGL,

@@ -13,6 +13,7 @@ type ServerPlayer = {
   maxHp: number;
   gold: number;
   pots: number;
+  iframeUntil: number;
 };
 
 export class ImprovedGameScene extends Phaser.Scene {
@@ -196,6 +197,17 @@ export class ImprovedGameScene extends Phaser.Scene {
         hpBar.setFillStyle(hpPercent > 0.5 ? 0x00ff00 : hpPercent > 0.25 ? 0xffaa00 : 0xff0000);
       }
       
+      // Handle I-frames visual effect
+      const now = Date.now();
+      if (p.iframeUntil && now < p.iframeUntil) {
+        // Flash player sprite during I-frames
+        const flashSpeed = 100; // ms per flash
+        const shouldShow = Math.floor(now / flashSpeed) % 2 === 0;
+        sprite.setAlpha(shouldShow ? 0.3 : 1.0);
+      } else {
+        sprite.setAlpha(1.0);
+      }
+      
       if (isLocal) {
         this.hpText?.setText(`HP: ${p.hp}/${p.maxHp}`);
         this.goldText?.setText(`Gold: ${p.gold}`);
@@ -259,6 +271,10 @@ export class ImprovedGameScene extends Phaser.Scene {
     
     // Handle chat
     this.room.onMessage("chat", (msg: ChatMessage) => this.appendChat(msg));
+    
+    // Handle combat feedback
+    this.room.onMessage("combat:hit", (data: any) => this.handleCombatHit(data));
+    this.room.onMessage("combat:drop", (data: any) => this.handleCombatDrop(data));
 
     // Fade splash
     if (this.splashImage) {
@@ -702,5 +718,59 @@ export class ImprovedGameScene extends Phaser.Scene {
     const a = ["Bold", "Swift", "Calm", "Brave", "Merry"];
     const b = ["Fox", "Owl", "Pine", "Fawn", "Wolf"];
     return `${a[Math.floor(Math.random() * a.length)]}${b[Math.floor(Math.random() * b.length)]}`;
+  }
+  
+  private handleCombatHit(data: any) {
+    const { damage, x, y, type, attackerId } = data;
+    
+    // Show floating damage number
+    this.showDamageNumber(x * TILE_SIZE, y * TILE_SIZE, damage, type === "player" ? 0xff4444 : 0xffaa44);
+    
+    // Screen shake if local player is involved
+    if (attackerId === this.room?.sessionId || data.targetId === this.room?.sessionId) {
+      this.cameras.main.shake(100, 0.02);
+    }
+    
+    // Attack animation flash for attacker
+    const attackerContainer = this.players.get(attackerId);
+    const attackerSprite = this.playerSprites.get(attackerId);
+    if (attackerSprite && attackerContainer) {
+      // Brief white flash
+      attackerSprite.setTint(0xffffff);
+      this.time.delayedCall(50, () => {
+        attackerSprite.setTint(0xffffff);
+      });
+    }
+  }
+  
+  private handleCombatDrop(data: any) {
+    const { type, x, y } = data;
+    
+    // Show floating pickup text
+    if (type === "potion") {
+      this.showDamageNumber(x * TILE_SIZE, y * TILE_SIZE, "Potion!", 0x44ff44);
+    }
+  }
+  
+  private showDamageNumber(x: number, y: number, text: string | number, color: number) {
+    const damageText = this.add.text(x, y - 16, text.toString(), {
+      fontSize: '14px',
+      color: `#${color.toString(16).padStart(6, '0')}`,
+      stroke: '#000000',
+      strokeThickness: 2
+    });
+    
+    damageText.setOrigin(0.5, 0.5);
+    damageText.setDepth(50);
+    
+    // Animate floating upward and fade out
+    this.tweens.add({
+      targets: damageText,
+      y: y - 40,
+      alpha: 0,
+      duration: 800,
+      ease: 'Power2',
+      onComplete: () => damageText.destroy()
+    });
   }
 }
