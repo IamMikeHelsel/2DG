@@ -371,6 +371,41 @@ export const MOB_TEMPLATES: Record<MobType, MobTemplate> = {
   }
 };
 
+// Zone System
+export enum ZoneType {
+  Town = "town",
+  Dungeon = "dungeon"
+}
+
+export interface Zone {
+  id: string;
+  name: string;
+  type: ZoneType;
+  width: number;
+  height: number;
+  spawnPoint: { x: number; y: number };
+  exits: ZoneExit[];
+  mobSpawns: MobSpawn[];
+  maxPlayers: number;
+}
+
+export interface ZoneExit {
+  x: number;
+  y: number;
+  targetZone: string;
+  targetX: number;
+  targetY: number;
+  requiresLevel?: number;
+}
+
+export interface MobSpawn {
+  x: number;
+  y: number;
+  mobType: MobType;
+  level: number;
+  respawnTime: number; // seconds
+}
+
 // Loot Tables
 export const LOOT_TABLES: Record<string, LootTable> = {
   slime_loot: {
@@ -410,5 +445,93 @@ export const LOOT_TABLES: Record<string, LootTable> = {
     guaranteedXp: 300,
     bonusXpChance: 0.5,
     bonusXpAmount: 150
+  }
+};
+
+// Zone Definitions
+export const ZONES: Record<string, Zone> = {
+  town: {
+    id: "town",
+    name: "Peaceful Town",
+    type: ZoneType.Town,
+    width: MAP.width,
+    height: MAP.height,
+    spawnPoint: { x: Math.floor(MAP.width * 0.45), y: Math.floor(MAP.height * 0.55) },
+    exits: [
+      {
+        x: Math.floor(MAP.width * 0.8),
+        y: Math.floor(MAP.height * 0.5),
+        targetZone: "dungeon_1",
+        targetX: 2,
+        targetY: 2,
+        requiresLevel: 2
+      }
+    ],
+    mobSpawns: [
+      { x: MAP.width * 0.3, y: MAP.height * 0.3, mobType: MobType.Slime, level: 1, respawnTime: 30 },
+      { x: MAP.width * 0.7, y: MAP.height * 0.3, mobType: MobType.Slime, level: 1, respawnTime: 30 }
+    ],
+    maxPlayers: 40
+  },
+  
+  dungeon_1: {
+    id: "dungeon_1",
+    name: "Crystal Cavern",
+    type: ZoneType.Dungeon,
+    width: 32,
+    height: 32,
+    spawnPoint: { x: 2, y: 2 },
+    exits: [
+      {
+        x: 2,
+        y: 2,
+        targetZone: "town",
+        targetX: Math.floor(MAP.width * 0.8),
+        targetY: Math.floor(MAP.height * 0.5)
+      }
+    ],
+    mobSpawns: [
+      { x: 8, y: 8, mobType: MobType.Goblin, level: 2, respawnTime: 45 },
+      { x: 24, y: 8, mobType: MobType.Goblin, level: 2, respawnTime: 45 },
+      { x: 8, y: 24, mobType: MobType.Wolf, level: 3, respawnTime: 60 },
+      { x: 24, y: 24, mobType: MobType.Wolf, level: 3, respawnTime: 60 },
+      { x: 16, y: 16, mobType: MobType.Boss, level: 5, respawnTime: 300 } // 5 minute boss respawn
+    ],
+    maxPlayers: 8 // Smaller dungeon instance
+  }
+};
+
+// Simple Crafting System
+export interface CraftingRecipe {
+  id: string;
+  name: string;
+  description: string;
+  materials: { itemId: string; quantity: number }[];
+  result: { itemId: string; quantity: number };
+  levelRequirement: number;
+}
+
+export const CRAFTING_RECIPES: Record<string, CraftingRecipe> = {
+  iron_sword_craft: {
+    id: "iron_sword_craft",
+    name: "Craft Iron Sword",
+    description: "Forge a basic iron sword",
+    materials: [
+      { itemId: "iron_ore", quantity: 5 },
+      { itemId: "wooden_sword", quantity: 1 }
+    ],
+    result: { itemId: "iron_sword", quantity: 1 },
+    levelRequirement: 3
+  },
+  
+  health_potion_craft: {
+    id: "health_potion_craft", 
+    name: "Brew Health Potion",
+    description: "Create a healing potion",
+    materials: [
+      { itemId: "iron_ore", quantity: 2 } // Using ore as generic material for demo
+    ],
+    result: { itemId: "health_potion", quantity: 3 },
+    levelRequirement: 1
   }
 };

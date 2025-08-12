@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
 import { WorldState, Player, Mob, DroppedItem, Projectile } from "./state";
-import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS, calculateLevelFromXp, getBaseStatsForLevel, DEFAULT_ITEMS, MOB_TEMPLATES, LOOT_TABLES, MobType, AIState, DamageType } from "@toodee/shared";
+import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS, calculateLevelFromXp, getBaseStatsForLevel, DEFAULT_ITEMS, MOB_TEMPLATES, LOOT_TABLES, MobType, AIState, DamageType, ZONES, ZoneType, CRAFTING_RECIPES } from "@toodee/shared";
 import { generateMichiganish, isWalkable, Grid } from "./map";
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean; attack?: boolean; rangedAttack?: boolean };
@@ -13,12 +13,25 @@ export class GameRoom extends Room<WorldState> {
   private attackCooldown = 400; // ms
   private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
   private joinCounter = 0;
+  private currentZone = "town"; // Default zone for this room
+  private maxPlayersBeforeOverflow = 40;
 
   onCreate(options: any) {
     this.setPatchRate(1000 / 10); // send state ~10/s; interpolate on client
     this.setState(new WorldState());
-    this.state.width = MAP.width;
-    this.state.height = MAP.height;
+    
+    // Configure room for specific zone
+    this.currentZone = options?.zone || "town";
+    const zone = ZONES[this.currentZone];
+    
+    if (zone) {
+      this.state.width = zone.width;
+      this.state.height = zone.height;
+      this.maxPlayersBeforeOverflow = zone.maxPlayers;
+    } else {
+      this.state.width = MAP.width;
+      this.state.height = MAP.height;
+    }
 
     this.grid = generateMichiganish();
 
@@ -35,6 +48,8 @@ export class GameRoom extends Room<WorldState> {
     });
     this.onMessage("attack", (client) => this.handleAttack(client.sessionId));
     this.onMessage("ranged_attack", (client) => this.handleRangedAttack(client.sessionId));
+    this.onMessage("zone_transition", (client, data: { targetZone: string }) => this.handleZoneTransition(client.sessionId, data.targetZone));
+    this.onMessage("craft", (client, data: { recipeId: string }) => this.handleCrafting(client.sessionId, data.recipeId));
     this.onMessage("shop:list", (client) => this.handleShopList(client.sessionId));
     this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
     this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
@@ -44,6 +59,12 @@ export class GameRoom extends Room<WorldState> {
   }
 
   onJoin(client: Client, options: any) {
+    // Check if room is at capacity
+    if (this.state.players.size >= this.maxPlayersBeforeOverflow) {
+      client.error(1000, "Room full - creating overflow instance");
+      return false;
+    }
+    
     const p = new Player();
     p.id = client.sessionId;
     p.name = options?.name || "Adventurer";
@@ -76,7 +97,17 @@ export class GameRoom extends Room<WorldState> {
     p.inventory.set("wooden_sword", 1);
     
     // Initialize zone
-    p.currentZone = "town";
+    p.currentZone = this.currentZone;
+    
+    // Spawn at zone spawn point or center
+    const zone = ZONES[this.currentZone];
+    if (zone) {
+      p.x = zone.spawnPoint.x;
+      p.y = zone.spawnPoint.y;
+    } else {
+      p.x = Math.floor(MAP.width * 0.45);
+      p.y = Math.floor(MAP.height * 0.55);
+    }
     
     // Initialize founder rewards tracking
     p.joinTimestamp = Date.now();
@@ -98,13 +129,10 @@ export class GameRoom extends Room<WorldState> {
     // spawn near center (or restore from client-provided snapshot for demo persistence)
     const rx = options?.restore?.x, ry = options?.restore?.y;
     if (typeof rx === "number" && typeof ry === "number") {
-      const tx = clamp(Math.round(rx), 0, MAP.width - 1);
-      const ty = clamp(Math.round(ry), 0, MAP.height - 1);
+      const tx = clamp(Math.round(rx), 0, this.state.width - 1);
+      const ty = clamp(Math.round(ry), 0, this.state.height - 1);
       p.x = tx;
       p.y = ty;
-    } else {
-      p.x = Math.floor(MAP.width * 0.45);
-      p.y = Math.floor(MAP.height * 0.55);
     }
     
     // Restore progression if provided
@@ -502,17 +530,13 @@ export class GameRoom extends Room<WorldState> {
     // Only spawn mobs if we don't have any
     if (this.state.mobs.size > 0) return;
     
-    // Spawn some basic mobs around the map
-    const mobSpawns = [
-      { x: MAP.width * 0.3, y: MAP.height * 0.3, type: MobType.Slime },
-      { x: MAP.width * 0.7, y: MAP.height * 0.3, type: MobType.Slime },
-      { x: MAP.width * 0.3, y: MAP.height * 0.7, type: MobType.Goblin },
-      { x: MAP.width * 0.7, y: MAP.height * 0.7, type: MobType.Wolf },
-    ];
-    
-    mobSpawns.forEach(spawn => {
-      this.spawnMobOfType(spawn.x, spawn.y, spawn.type);
-    });
+    // Spawn mobs based on current zone
+    const zone = ZONES[this.currentZone];
+    if (zone) {
+      zone.mobSpawns.forEach(spawn => {
+        this.spawnMobOfType(spawn.x, spawn.y, spawn.mobType, spawn.level);
+      });
+    }
   }
   
   private spawnMobOfType(x: number, y: number, mobType: MobType, level: number = 1) {
@@ -873,6 +897,118 @@ export class GameRoom extends Room<WorldState> {
           }
           break;
       }
+    });
+  }
+
+  private handleZoneTransition(playerId: string, targetZoneId: string) {
+    const player = this.state.players.get(playerId);
+    if (!player) return;
+    
+    const currentZone = ZONES[player.currentZone];
+    const targetZone = ZONES[targetZoneId];
+    
+    if (!currentZone || !targetZone) {
+      console.error(`Invalid zone transition: ${player.currentZone} -> ${targetZoneId}`);
+      return;
+    }
+    
+    // Find the exit from current zone to target zone
+    const exit = currentZone.exits.find(e => e.targetZone === targetZoneId);
+    if (!exit) {
+      this.clients.find(c => c.sessionId === playerId)?.send("zone_transition_failed", {
+        reason: "No exit found to target zone"
+      });
+      return;
+    }
+    
+    // Check if player is at the exit location
+    const playerTileX = Math.round(player.x);
+    const playerTileY = Math.round(player.y);
+    
+    if (Math.abs(playerTileX - exit.x) > 1 || Math.abs(playerTileY - exit.y) > 1) {
+      this.clients.find(c => c.sessionId === playerId)?.send("zone_transition_failed", {
+        reason: "Not at exit location"
+      });
+      return;
+    }
+    
+    // Check level requirement
+    if (exit.requiresLevel && player.level < exit.requiresLevel) {
+      this.clients.find(c => c.sessionId === playerId)?.send("zone_transition_failed", {
+        reason: `Requires level ${exit.requiresLevel}`
+      });
+      return;
+    }
+    
+    // Perform zone transition
+    player.currentZone = targetZoneId;
+    player.x = exit.targetX;
+    player.y = exit.targetY;
+    
+    this.clients.find(c => c.sessionId === playerId)?.send("zone_transition_success", {
+      newZone: targetZone,
+      x: player.x,
+      y: player.y
+    });
+    
+    // For this demo, we'll keep players in the same room but track their zone
+    // In a full implementation, you'd transfer them to different room instances
+  }
+
+  private handleCrafting(playerId: string, recipeId: string) {
+    const player = this.state.players.get(playerId);
+    if (!player) return;
+    
+    const recipe = CRAFTING_RECIPES[recipeId];
+    if (!recipe) {
+      this.clients.find(c => c.sessionId === playerId)?.send("craft_result", {
+        success: false,
+        reason: "Recipe not found"
+      });
+      return;
+    }
+    
+    // Check level requirement
+    if (player.level < recipe.levelRequirement) {
+      this.clients.find(c => c.sessionId === playerId)?.send("craft_result", {
+        success: false,
+        reason: `Requires level ${recipe.levelRequirement}`
+      });
+      return;
+    }
+    
+    // Check if player has required materials
+    for (const material of recipe.materials) {
+      const playerQuantity = player.inventory.get(material.itemId) || 0;
+      if (playerQuantity < material.quantity) {
+        const item = DEFAULT_ITEMS[material.itemId];
+        this.clients.find(c => c.sessionId === playerId)?.send("craft_result", {
+          success: false,
+          reason: `Need ${material.quantity} ${item?.name || material.itemId}, have ${playerQuantity}`
+        });
+        return;
+      }
+    }
+    
+    // Consume materials
+    recipe.materials.forEach(material => {
+      const currentQuantity = player.inventory.get(material.itemId) || 0;
+      const newQuantity = currentQuantity - material.quantity;
+      if (newQuantity <= 0) {
+        player.inventory.delete(material.itemId);
+      } else {
+        player.inventory.set(material.itemId, newQuantity);
+      }
+    });
+    
+    // Give result item
+    const currentResult = player.inventory.get(recipe.result.itemId) || 0;
+    player.inventory.set(recipe.result.itemId, currentResult + recipe.result.quantity);
+    
+    this.clients.find(c => c.sessionId === playerId)?.send("craft_result", {
+      success: true,
+      recipe: recipe,
+      resultItem: DEFAULT_ITEMS[recipe.result.itemId]
     });
   }
 }
