@@ -12,9 +12,11 @@
   },
   "dependencies": {
     "@colyseus/schema": "^2.0.28",
+    "@supabase/supabase-js": "^2.55.0",
     "colyseus": "^0.15.16",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "ioredis": "^5.7.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

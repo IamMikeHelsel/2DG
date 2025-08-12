@@ -1,0 +1,187 @@
+name: rollback-deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'What to rollback'
+        required: true
+        type: choice
+        options:
+          - server
+          - client
+          - both
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      version:
+        description: 'Version to rollback to (leave empty for previous version)'
+        required: false
+        type: string
+
+env:
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+jobs:
+  rollback-server:
+    if: inputs.target == 'server' || inputs.target == 'both'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Setup Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@v1
+        
+      - name: Get current releases
+        run: |
+          if [[ "${{ inputs.environment }}" == "staging" ]]; then
+            APP_NAME="toodeegame-staging"
+          else
+            APP_NAME="toodeegame"
+          fi
+          
+          echo "Getting releases for $APP_NAME..."
+          flyctl releases list --app $APP_NAME
+          
+      - name: Rollback server
+        run: |
+          if [[ "${{ inputs.environment }}" == "staging" ]]; then
+            APP_NAME="toodeegame-staging"
+          else
+            APP_NAME="toodeegame"
+          fi
+          
+          if [[ -n "${{ inputs.version }}" ]]; then
+            echo "Rolling back to specific version: ${{ inputs.version }}"
+            flyctl deploy --image registry.fly.io/$APP_NAME:${{ inputs.version }} --app $APP_NAME
+          else
+            echo "Rolling back to previous version..."
+            PREV_VERSION=$(flyctl releases list --app $APP_NAME -j | jq -r '.[1].version')
+            echo "Previous version: $PREV_VERSION"
+            flyctl deploy --image registry.fly.io/$APP_NAME:$PREV_VERSION --app $APP_NAME
+          fi
+          
+      - name: Verify rollback
+        run: |
+          if [[ "${{ inputs.environment }}" == "staging" ]]; then
+            HEALTH_URL="https://toodeegame-staging.fly.dev/health"
+          else
+            HEALTH_URL="https://toodeegame.fly.dev/health"
+          fi
+          
+          echo "Verifying rollback at $HEALTH_URL"
+          sleep 30
+          
+          for i in {1..5}; do
+            if curl -f "$HEALTH_URL"; then
+              echo "✅ Rollback verification successful!"
+              exit 0
+            fi
+            echo "Verification attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+          
+          echo "❌ Rollback verification failed"
+          exit 1
+
+  rollback-client:
+    if: inputs.target == 'client' || inputs.target == 'both'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Checkout specific version
+        if: inputs.version != ''
+        run: |
+          echo "Checking out version: ${{ inputs.version }}"
+          git checkout ${{ inputs.version }}
+          
+      - name: Checkout previous commit
+        if: inputs.version == ''
+        run: |
+          echo "Checking out previous commit"
+          git checkout HEAD~1
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Enable corepack / pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.0.0 --activate
+          
+      - name: Install dependencies
+        run: pnpm i --frozen-lockfile
+        
+      - name: Build shared package
+        run: pnpm -F @toodee/shared build
+        
+      - name: Build client
+        env:
+          VITE_SERVER_URL: ${{ inputs.environment == 'staging' && secrets.VITE_SERVER_URL_STAGING || secrets.VITE_SERVER_URL }}
+          NODE_ENV: ${{ inputs.environment }}
+        run: pnpm -F @toodee/client build
+        
+      - name: Add rollback notice
+        run: |
+          cd packages/client/dist
+          echo "{" > rollback-info.json
+          echo "  \"rollback\": true," >> rollback-info.json
+          echo "  \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," >> rollback-info.json
+          echo "  \"target_version\": \"${{ inputs.version || 'previous' }}\"," >> rollback-info.json
+          echo "  \"environment\": \"${{ inputs.environment }}\"," >> rollback-info.json
+          echo "  \"initiated_by\": \"${{ github.actor }}\"" >> rollback-info.json
+          echo "}" >> rollback-info.json
+          
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/client/dist
+          
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+        
+  summary:
+    needs: [rollback-server, rollback-client]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Rollback Summary
+        run: |
+          echo "🔄 Rollback Summary"
+          echo "Target: ${{ inputs.target }}"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Version: ${{ inputs.version || 'previous' }}"
+          echo "Initiated by: ${{ github.actor }}"
+          echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          
+          if [[ "${{ needs.rollback-server.result }}" == "success" ]]; then
+            echo "✅ Server rollback: SUCCESS"
+          elif [[ "${{ needs.rollback-server.result }}" == "skipped" ]]; then
+            echo "⏭️ Server rollback: SKIPPED"
+          else
+            echo "❌ Server rollback: FAILED"
+          fi
+          
+          if [[ "${{ needs.rollback-client.result }}" == "success" ]]; then
+            echo "✅ Client rollback: SUCCESS"
+          elif [[ "${{ needs.rollback-client.result }}" == "skipped" ]]; then
+            echo "⏭️ Client rollback: SKIPPED"
+          else
+            echo "❌ Client rollback: FAILED"
+          fi
