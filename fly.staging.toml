@@ -1,32 +1,32 @@
-# Toodeegame MMO Server Configuration
-app = "toodeegame"
+# Toodeegame MMO Server Configuration - STAGING
+app = "toodeegame-staging"
 primary_region = "ord"  # Chicago - central US location
 
 [build]
   dockerfile = "Dockerfile.simple"
 
 [env]
-  NODE_ENV = "production"
+  NODE_ENV = "staging"
   PORT = "2567"
   ENABLE_DATABASE = "true"
   ENABLE_CACHE = "true"
-  ENABLE_ANALYTICS = "true"
-  ENABLE_RATE_LIMITING = "true"
+  ENABLE_ANALYTICS = "false"
+  ENABLE_RATE_LIMITING = "false"
 
 [http_service]
   internal_port = 2567
   force_https = true
-  auto_stop_machines = false
+  auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0  # Allow scaling to zero for staging
   processes = ["app"]
 
 [[services]]
   internal_port = 2567
   protocol = "tcp"
-  auto_stop_machines = false
+  auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
 
   [[services.ports]]
     port = 80
@@ -37,27 +37,21 @@ primary_region = "ord"  # Chicago - central US location
     handlers = ["http", "tls"]
 
   [[services.http_checks]]
-    interval = "10s"
-    timeout = "5s"
-    grace_period = "10s"
+    interval = "30s"  # Less frequent checks for staging
+    timeout = "10s"
+    grace_period = "15s"
     method = "GET"
     path = "/health"
     
 [[services.tcp_checks]]
-  interval = "10s"
-  timeout = "2s"
-  grace_period = "5s"
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
   
 [deploy]
-  strategy = "rolling"
-  max_unavailable = 0.5  # Zero-downtime deployments
+  strategy = "immediate"  # Faster deployments for staging
   
 [[vm]]
-  memory = "512mb"
+  memory = "256mb"  # Smaller instance for staging
   cpu_kind = "shared"
   cpus = 1
-
-# Multiple regions for better latency (optional)
-# [regions]
-#   primary = "ord"
-#   secondary = ["ewr", "lax"]

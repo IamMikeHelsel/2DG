@@ -1,32 +1,73 @@
-# Simple working Dockerfile for Fly.io
-FROM node:20-alpine
-
-WORKDIR /app
+# Multi-stage Dockerfile for production deployment
+FROM node:20-alpine AS base
 
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 
-# Copy everything
-COPY . .
+WORKDIR /app
 
-# Install ALL dependencies
-RUN pnpm install --frozen-lockfile || pnpm install
+# Copy package files for dependency installation
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/server/package.json ./packages/server/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/client/package.json ./packages/client/
+
+# Install dependencies (cached layer)
+RUN pnpm install --frozen-lockfile
+
+# Development stage
+FROM base AS development
+COPY . .
+CMD ["pnpm", "-F", "@toodee/server", "dev"]
+
+# Build stage
+FROM base AS build
+COPY . .
 
 # Build the project
 RUN pnpm -F @toodee/shared build && pnpm -F @toodee/server build
 
-WORKDIR /app/packages/server
+# Production stage
+FROM node:20-alpine AS production
 
-# Create symlink for @toodee/shared
-RUN mkdir -p node_modules/@toodee && \
-    ln -s /app/packages/shared node_modules/@toodee/shared
+# Add non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S toodee -u 1001
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/server/package.json ./packages/server/
+COPY packages/shared/package.json ./packages/shared/
+
+# Install only production dependencies
+RUN pnpm install --frozen-lockfile --prod
+
+# Copy built artifacts from build stage
+COPY --from=build /app/packages/shared/dist ./packages/shared/dist
+COPY --from=build /app/packages/server/dist ./packages/server/dist
+
+# Create symlink for @toodee/shared in server node_modules
+RUN mkdir -p /app/packages/server/node_modules/@toodee && \
+    ln -s /app/packages/shared /app/packages/server/node_modules/@toodee/shared
+
+# Change ownership to non-root user
+RUN chown -R toodee:nodejs /app
+USER toodee
+
+WORKDIR /app/packages/server
 
 ENV NODE_ENV=production
 ENV PORT=2567
 
 EXPOSE 2567
 
-HEALTHCHECK --interval=10s --timeout=3s --start-period=5s \
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD wget -qO- http://127.0.0.1:2567/health || exit 1
 
-CMD ["node", "dist/server/src/index.js"]
+CMD ["node", "dist/index.js"]

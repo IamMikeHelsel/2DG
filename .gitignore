@@ -4,6 +4,30 @@ dist
 packages/client/dist
 packages/server/dist
 packages/shared/dist
+
+# Environment files (except templates and development)
 .env
+.env.local
+.env.production
+.env.staging
+!.env.development
+!.env.*.template
+
+# IDE files
 .DS_Store
 .vscode
+.idea
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
+.cache
+
+# OS files
+Thumbs.db
