@@ -13,16 +13,19 @@ import {
   BETA_TEST_PERIOD_DAYS,
   BUG_HUNTER_REPORTS_REQUIRED,
   REFERRAL_REWARDS,
-  ANNIVERSARY_REWARDS
+  ANNIVERSARY_REWARDS,
+  createLogger,
+  type StructuredLogger
 } from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
+import type { ServerMonitoring } from "./monitoring.js";
 
 const { Room } = colyseus;
 type Client = colyseus.Client;
 
 const SPAWN_DUMMY_PROBABILITY = 0.3; // 30% chance
 
-type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
+type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean; timestamp?: number };
 
 export class GameRoom extends Room<WorldState> {
   private inputs = new Map<string, Input>();
@@ -32,14 +35,20 @@ export class GameRoom extends Room<WorldState> {
   private attackCooldown = 400; // ms
   private joinCounter = 0;
   private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
+  private monitoring: ServerMonitoring;
+  private logger: StructuredLogger;
 
   // Performance monitoring
   private tickTimes: number[] = [];
   private lastPerformanceLog = 0;
   private maxTickTime = 0;
+  private lastMemoryCheck = 0;
 
 
   onCreate(options: any) {
+    this.monitoring = options.monitoring;
+    this.logger = createLogger('server', this.roomId);
+    
     this.setPatchRate(1000 / 10); // send state ~10/s; interpolate on client
     this.setState(new WorldState());
     this.state.width = MAP.width;
@@ -47,9 +56,21 @@ export class GameRoom extends Room<WorldState> {
 
     this.grid = generateMichiganish();
 
+    this.logger.info('room_created', { 
+      roomId: this.roomId, 
+      mapSize: { width: MAP.width, height: MAP.height }
+    });
+
     this.onMessage("input", (client, data: Input) => {
       this.inputs.set(client.sessionId, data);
+      
+      // Track input latency if timestamp provided
+      if (data.timestamp) {
+        const rtt = Date.now() - data.timestamp;
+        this.monitoring.recordNetworkRTT(rtt, client.sessionId);
+      }
     });
+    
     this.onMessage("chat", (client, text: string) => {
       const p = this.state.players.get(client.sessionId);
       if (!p) return;
@@ -57,12 +78,41 @@ export class GameRoom extends Room<WorldState> {
       if (!clean) return;
       const msg: ChatMessage = { from: p.name || "Adventurer", text: clean, ts: Date.now() };
       this.broadcast("chat", msg);
+      
+      this.monitoring.trackGameEvent('chat_message', { 
+        playerId: client.sessionId, 
+        messageLength: clean.length 
+      }, p.id);
     });
-    this.onMessage("attack", (client) => this.handleAttack(client.sessionId));
+    
+    this.onMessage("attack", (client) => {
+      this.handleAttack(client.sessionId);
+      this.monitoring.trackGameEvent('player_attack', { 
+        playerId: client.sessionId 
+      }, client.sessionId);
+    });
+    
     this.onMessage("shop:list", (client) => this.handleShopList(client.sessionId));
-    this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
-    this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
-    this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
+    this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => {
+      this.handleShopBuy(client.sessionId, data);
+      this.monitoring.trackGameEvent('shop_purchase', { 
+        playerId: client.sessionId,
+        itemId: data.id,
+        quantity: data.qty || 1
+      }, client.sessionId);
+    });
+    
+    this.onMessage("bug_report", (client, data: { description: string }) => {
+      this.handleBugReport(client.sessionId, data);
+      this.monitoring.trackUserEvent(client.sessionId, 'bug_report_submitted', {
+        descriptionLength: data.description?.length || 0
+      });
+    });
+    
+    this.onMessage("referral", (client, data: { referredPlayerId: string }) => {
+      this.handleReferral(client.sessionId, data);
+      this.monitoring.trackUserEvent(client.sessionId, 'referral_submitted');
+    });
 
     this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
   }
@@ -106,12 +156,40 @@ export class GameRoom extends Room<WorldState> {
     }
     if (typeof options?.restore?.gold === "number") p.gold = Math.max(0, Math.min(999999, Math.floor(options.restore.gold)));
     if (typeof options?.restore?.pots === "number") p.pots = Math.max(0, Math.min(999, Math.floor(options.restore.pots)));
+    
     this.state.players.set(client.sessionId, p);
+
+    // Track user joining
+    this.monitoring.trackUserEvent(client.sessionId, 'player_joined', {
+      playerName: p.name,
+      founderTier,
+      playerCount: this.state.players.size,
+      isRestore: !!(options?.restore)
+    });
+
+    this.logger.info('player_joined', {
+      playerId: client.sessionId,
+      playerName: p.name,
+      playerCount: this.state.players.size,
+      founderTier
+    });
   }
 
   onLeave(client: Client, consented: boolean) {
     this.state.players.delete(client.sessionId);
     this.inputs.delete(client.sessionId);
+    
+    // Track user leaving
+    this.monitoring.trackUserEvent(client.sessionId, 'player_left', {
+      playerCount: this.state.players.size,
+      consented
+    });
+
+    this.logger.info('player_left', {
+      playerId: client.sessionId,
+      playerCount: this.state.players.size,
+      consented
+    });
   }
 
   update(dt: number) {
@@ -185,74 +263,103 @@ export class GameRoom extends Room<WorldState> {
       p.lastSeq = inp.seq >>> 0;
     });
     
-    // Performance monitoring
+    // Enhanced performance monitoring
     const tickEnd = performance.now();
     const tickTime = tickEnd - tickStart;
+    
+    // Record with monitoring system
+    this.monitoring.recordTickTime(tickTime, this.state.players.size);
+    
     this.tickTimes.push(tickTime);
     this.maxTickTime = Math.max(this.maxTickTime, tickTime);
     
-    // Keep only last 100 measurements
+    // Keep only last 100 measurements for local logging
     if (this.tickTimes.length > 100) {
       this.tickTimes.shift();
     }
     
-    // Log performance every 30 seconds
+    // Log performance every 30 seconds (existing behavior)
     const now = Date.now();
     if (now - this.lastPerformanceLog > 30000) {
       this.logPerformanceStats();
       this.lastPerformanceLog = now;
     }
+
+    // Check memory usage every 5 minutes
+    if (now - this.lastMemoryCheck > 5 * 60 * 1000) {
+      this.monitoring.recordMemoryUsage();
+      this.lastMemoryCheck = now;
+    }
   }
 
   private handleAttack(playerId: string) {
-    const now = Date.now();
-    const last = this.lastAttack.get(playerId) || 0;
-    if (now - last < this.attackCooldown) return;
-    this.lastAttack.set(playerId, now);
+    try {
+      const now = Date.now();
+      const last = this.lastAttack.get(playerId) || 0;
+      if (now - last < this.attackCooldown) return;
+      this.lastAttack.set(playerId, now);
 
-    const attacker = this.state.players.get(playerId);
-    if (!attacker) return;
+      const attacker = this.state.players.get(playerId);
+      if (!attacker) return;
 
-    // Hit check: 1-tile arc in front, mobs first then players
-    const front = neighbor(attacker.x, attacker.y, attacker.dir);
-    // Attack mobs
-    let hitSomething = false;
-    this.state.mobs.forEach((m, key) => {
-      const mx = Math.round(m.x), my = Math.round(m.y);
-      if (mx === front.x && my === front.y && m.hp > 0 && !hitSomething) {
-        m.hp = Math.max(0, m.hp - 30);
-        hitSomething = true;
-        if (m.hp === 0) {
-          // reward attacker
-          attacker.hp = Math.min(attacker.maxHp, attacker.hp + 10);
-          attacker.gold = Math.min(999999, attacker.gold + 10);
-          const id = key;
-          setTimeout(() => this.respawnMob(id), 2000);
+      // Hit check: 1-tile arc in front, mobs first then players
+      const front = neighbor(attacker.x, attacker.y, attacker.dir);
+      // Attack mobs
+      let hitSomething = false;
+      this.state.mobs.forEach((m, key) => {
+        const mx = Math.round(m.x), my = Math.round(m.y);
+        if (mx === front.x && my === front.y && m.hp > 0 && !hitSomething) {
+          m.hp = Math.max(0, m.hp - 30);
+          hitSomething = true;
+          if (m.hp === 0) {
+            // reward attacker
+            attacker.hp = Math.min(attacker.maxHp, attacker.hp + 10);
+            attacker.gold = Math.min(999999, attacker.gold + 10);
+            const id = key;
+            setTimeout(() => this.respawnMob(id), 2000);
+            
+            this.monitoring.trackGameEvent('mob_defeated', {
+              playerId,
+              mobId: id,
+              goldReward: 10
+            }, playerId);
+          }
         }
-      }
-    });
-    if (hitSomething) return;
+      });
+      if (hitSomething) return;
 
-    // Then players
-    this.state.players.forEach((target, id) => {
-      if (id === playerId) return;
-      const tx = Math.round(target.x);
-      const ty = Math.round(target.y);
-      if (tx === front.x && ty === front.y && target.hp > 0) {
-        target.hp = Math.max(0, target.hp - 25);
-        if (target.hp === 0) {
-          // respawn at town center after short delay
-          const rid = id;
-          setTimeout(() => {
-            const t = this.state.players.get(rid);
-            if (!t) return;
-            t.x = Math.floor(MAP.width * 0.45);
-            t.y = Math.floor(MAP.height * 0.55);
-            t.hp = t.maxHp;
-          }, 1500);
+      // Then players
+      this.state.players.forEach((target, id) => {
+        if (id === playerId) return;
+        const tx = Math.round(target.x);
+        const ty = Math.round(target.y);
+        if (tx === front.x && ty === front.y && target.hp > 0) {
+          target.hp = Math.max(0, target.hp - 25);
+          if (target.hp === 0) {
+            // respawn at town center after short delay
+            const rid = id;
+            setTimeout(() => {
+              const t = this.state.players.get(rid);
+              if (!t) return;
+              t.x = Math.floor(MAP.width * 0.45);
+              t.y = Math.floor(MAP.height * 0.55);
+              t.hp = t.maxHp;
+            }, 1500);
+            
+            this.monitoring.trackGameEvent('player_defeated', {
+              attackerId: playerId,
+              defeatedPlayerId: id
+            }, playerId);
+          }
         }
-      }
-    });
+      });
+    } catch (error) {
+      this.monitoring.recordError(error as Error, {
+        method: 'handleAttack',
+        playerId,
+        playerCount: this.state.players.size
+      });
+    }
   }
 
   private spawnMob(pos: { x: number; y: number }) {
