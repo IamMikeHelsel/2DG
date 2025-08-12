@@ -3,10 +3,14 @@ import cors from "cors";
 import colyseus from "colyseus";
 import { createServer } from "http";
 import { GameRoom } from "./room";
+import { serverAnalytics } from "./analytics/ServerAnalyticsService";
 
 const { Server } = colyseus;
 
 const port = Number(process.env.PORT || 2567);
+
+// Initialize analytics
+serverAnalytics.initialize();
 
 const app = express();
 app.use(cors());

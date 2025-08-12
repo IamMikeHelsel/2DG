@@ -1,7 +1,8 @@
 import Phaser from "phaser";
 import { createClient } from "../net";
-import { TILE_SIZE, MAP, ChatMessage } from "@toodee/shared";
+import { TILE_SIZE, MAP, ChatMessage, AnalyticsEvent } from "@toodee/shared";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
+import { analytics } from "../analytics/AnalyticsService";
 
 type ServerPlayer = { 
   id: string; 
@@ -80,6 +81,15 @@ export class ImprovedGameScene extends Phaser.Scene {
     
     try {
       this.room = await client.joinOrCreate("toodee", { name, restore });
+      
+      // Track successful connection and character creation
+      analytics.setUser(this.room.sessionId, name);
+      
+      if (!restore) {
+        // New character created
+        analytics.trackCharacterCreated(name);
+      }
+      
     } catch (err) {
       this.showToast("Cannot connect to server", "error");
       return;
@@ -570,7 +580,15 @@ export class ImprovedGameScene extends Phaser.Scene {
 
     // Attack
     const space = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    space.on("down", () => this.room?.send("attack"));
+    space.on("down", () => {
+      // Track combat initiation
+      analytics.track({
+        event: AnalyticsEvent.COMBAT_STARTED,
+        timestamp: Date.now()
+      });
+      
+      this.room?.send("attack");
+    });
 
     // Shop
     const keyE = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E);
@@ -582,6 +600,12 @@ export class ImprovedGameScene extends Phaser.Scene {
   }
 
   private tryOpenShop() {
+    // Track shop opened
+    analytics.track({
+      event: AnalyticsEvent.SHOP_OPENED,
+      timestamp: Date.now()
+    });
+    
     this.room?.send("shop:list");
   }
 
@@ -639,7 +663,16 @@ export class ImprovedGameScene extends Phaser.Scene {
 
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && input.value.trim()) {
-        this.room?.send("chat", input.value.trim());
+        const message = input.value.trim();
+        
+        // Track chat message
+        analytics.track({
+          event: AnalyticsEvent.CHAT_MESSAGE_SENT,
+          timestamp: Date.now(),
+          messageLength: message.length
+        });
+        
+        this.room?.send("chat", message);
         input.value = "";
         input.style.display = "none";
       } else if (e.key === "Escape") {
@@ -723,8 +756,23 @@ export class ImprovedGameScene extends Phaser.Scene {
   private updateShopResult(payload: any) {
     if (payload.ok) {
       this.showToast("Purchase successful!", "ok");
+      
+      // Track successful shop transaction
+      analytics.track({
+        event: AnalyticsEvent.SHOP_TRANSACTION,
+        timestamp: Date.now(),
+        transactionSuccess: true,
+        playerGold: payload.gold
+      });
     } else {
       this.showToast(payload.reason || "Purchase failed", "error");
+      
+      // Track failed transaction
+      analytics.track({
+        event: AnalyticsEvent.SHOP_TRANSACTION,
+        timestamp: Date.now(),
+        transactionSuccess: false
+      });
     }
   }
 

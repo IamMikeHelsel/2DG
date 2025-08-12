@@ -115,3 +115,130 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
 export const EARLY_BIRD_LIMIT = 50;
 export const BETA_TEST_PERIOD_DAYS = 14;
 export const BUG_HUNTER_REPORTS_REQUIRED = 5;
+
+// Analytics Events
+export enum AnalyticsEvent {
+  // Core Game Events
+  GAME_LOADED = 'game_loaded',
+  SESSION_START = 'session_start',
+  SESSION_END = 'session_end',
+  
+  // Character & Account Events
+  CHARACTER_CREATED = 'character_created',
+  PLAYER_JOINED = 'player_joined',
+  PLAYER_LEFT = 'player_left',
+  
+  // Gameplay Events
+  COMBAT_STARTED = 'combat_started',
+  COMBAT_ENDED = 'combat_ended',
+  PLAYER_DIED = 'player_died',
+  PLAYER_RESPAWNED = 'player_respawned',
+  MOB_KILLED = 'mob_killed',
+  BOSS_DEFEATED = 'boss_defeated',
+  LEVEL_UP = 'level_up',
+  
+  // Commerce Events
+  SHOP_OPENED = 'shop_opened',
+  SHOP_TRANSACTION = 'shop_transaction',
+  ITEM_PURCHASED = 'item_purchased',
+  
+  // Social Events
+  PARTY_FORMED = 'party_formed',
+  PARTY_JOINED = 'party_joined',
+  PARTY_LEFT = 'party_left',
+  CHAT_MESSAGE_SENT = 'chat_message_sent',
+  
+  // Retention & Engagement
+  DAILY_LOGIN = 'daily_login',
+  TUTORIAL_COMPLETED = 'tutorial_completed',
+  FIRST_COMBAT = 'first_combat',
+  
+  // Founder Rewards
+  FOUNDER_TIER_ASSIGNED = 'founder_tier_assigned',
+  REWARD_UNLOCKED = 'reward_unlocked',
+  BUG_REPORT_SUBMITTED = 'bug_report_submitted',
+  REFERRAL_MADE = 'referral_made'
+}
+
+export interface BaseAnalyticsEvent {
+  event: AnalyticsEvent;
+  timestamp: number;
+  sessionId?: string;
+  playerId?: string;
+  playerName?: string;
+}
+
+export interface GameLoadedEvent extends BaseAnalyticsEvent {
+  event: AnalyticsEvent.GAME_LOADED;
+  userAgent: string;
+  viewportWidth: number;
+  viewportHeight: number;
+  connectionAttempts?: number;
+}
+
+export interface SessionEvent extends BaseAnalyticsEvent {
+  event: AnalyticsEvent.SESSION_START | AnalyticsEvent.SESSION_END;
+  sessionDuration?: number; // for session_end
+}
+
+export interface CharacterCreatedEvent extends BaseAnalyticsEvent {
+  event: AnalyticsEvent.CHARACTER_CREATED;
+  characterName: string;
+  creationTime: number;
+}
+
+export interface CombatEvent extends BaseAnalyticsEvent {
+  event: AnalyticsEvent.COMBAT_STARTED | AnalyticsEvent.COMBAT_ENDED | AnalyticsEvent.PLAYER_DIED;
+  mobType?: string;
+  mobId?: string;
+  playerHp?: number;
+  playerMaxHp?: number;
+  combatDuration?: number; // for combat_ended
+  damageDealt?: number;
+  damageTaken?: number;
+}
+
+export interface ShopEvent extends BaseAnalyticsEvent {
+  event: AnalyticsEvent.SHOP_OPENED | AnalyticsEvent.SHOP_TRANSACTION | AnalyticsEvent.ITEM_PURCHASED;
+  itemId?: string;
+  itemName?: string;
+  itemPrice?: number;
+  quantity?: number;
+  playerGold?: number;
+  transactionSuccess?: boolean;
+}
+
+export interface SocialEvent extends BaseAnalyticsEvent {
+  event: AnalyticsEvent.PARTY_FORMED | AnalyticsEvent.PARTY_JOINED | AnalyticsEvent.PARTY_LEFT | AnalyticsEvent.CHAT_MESSAGE_SENT;
+  partyId?: string;
+  partySize?: number;
+  messageLength?: number; // for chat
+}
+
+export interface FounderEvent extends BaseAnalyticsEvent {
+  event: AnalyticsEvent.FOUNDER_TIER_ASSIGNED | AnalyticsEvent.REWARD_UNLOCKED | AnalyticsEvent.BUG_REPORT_SUBMITTED;
+  founderTier?: FounderTier;
+  rewardId?: string;
+  rewardType?: string;
+  joinOrder?: number;
+  bugReportCount?: number;
+}
+
+export type AnalyticsEventData = 
+  | GameLoadedEvent 
+  | SessionEvent 
+  | CharacterCreatedEvent 
+  | CombatEvent 
+  | ShopEvent 
+  | SocialEvent 
+  | FounderEvent 
+  | BaseAnalyticsEvent;
+
+// Analytics Configuration
+export const ANALYTICS_CONFIG = {
+  BATCH_SIZE: 10,
+  FLUSH_INTERVAL: 30000, // 30 seconds
+  MAX_QUEUE_SIZE: 100,
+  SESSION_TIMEOUT: 1800000, // 30 minutes
+  PRIVACY_MODE: false, // Set to true to disable analytics in development
+} as const;
