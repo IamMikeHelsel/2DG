@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { createClient } from "../net";
+import { connectToInstance, createClient } from "../net";
 import { TILE_SIZE, MAP, ChatMessage } from "@toodee/shared";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
 
@@ -30,13 +30,15 @@ export class ImprovedGameScene extends Phaser.Scene {
   private chatInputEl?: HTMLInputElement;
   private hpText?: Phaser.GameObjects.Text;
   private goldText?: Phaser.GameObjects.Text;
+  private instanceText?: Phaser.GameObjects.Text;
+  private playerCountText?: Phaser.GameObjects.Text;
   private shopEl?: HTMLDivElement;
   private splashImage?: Phaser.GameObjects.Image;
   private toastRoot?: HTMLDivElement;
   private terrainMap: number[][] = [];
 
   constructor() { 
-    super("improved-game"); 
+    super("ImprovedGame"); 
   }
 
   preload() {
@@ -67,14 +69,12 @@ export class ImprovedGameScene extends Phaser.Scene {
       .setScrollFactor(0).setDepth(1000);
 
     // Connect to server
-    const client = createClient();
-    const restore = this.loadSave();
-    const name = restore?.name || this.randomName();
+    const selectedInstanceId = (window as any).selectedInstanceId || "toodee";
     
     try {
-      this.room = await client.joinOrCreate("toodee", { name, restore });
+      this.room = await connectToInstance(selectedInstanceId);
     } catch (err) {
-      this.showToast("Cannot connect to server", "error");
+      this.showToast(`Cannot connect to instance ${selectedInstanceId}`, "error");
       return;
     }
 
@@ -84,6 +84,9 @@ export class ImprovedGameScene extends Phaser.Scene {
       
       // Create container for player
       const container = this.add.container(p.x * TILE_SIZE, p.y * TILE_SIZE);
+      
+      // Update player count
+      this.updatePlayerCount();
       
       // Add shadow
       const shadow = this.add.ellipse(0, 6, TILE_SIZE * 0.7, TILE_SIZE * 0.35, 0x000000, 0.3);
@@ -134,8 +137,24 @@ export class ImprovedGameScene extends Phaser.Scene {
           strokeThickness: 2
         }).setScrollFactor(0).setDepth(100);
         
+        // Instance info
+        const selectedInstanceId = (window as any).selectedInstanceId || "toodee";
+        this.instanceText = this.add.text(12, 52, `Instance: ${selectedInstanceId}`, { 
+          color: "#88ccff", 
+          fontSize: "12px",
+          stroke: '#000000',
+          strokeThickness: 2
+        }).setScrollFactor(0).setDepth(100);
+        
+        this.playerCountText = this.add.text(12, 68, "Players: 0", { 
+          color: "#88ccff", 
+          fontSize: "12px",
+          stroke: '#000000',
+          strokeThickness: 2
+        }).setScrollFactor(0).setDepth(100);
+        
         // Add controls hint
-        this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat", {
+        this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat | ESC for instance menu", {
           color: "#aaaaaa",
           fontSize: "12px",
           stroke: '#000000',
@@ -148,6 +167,9 @@ export class ImprovedGameScene extends Phaser.Scene {
       this.players.get(key)?.destroy();
       this.players.delete(key);
       this.playerSprites.delete(key);
+      
+      // Update player count
+      this.updatePlayerCount();
     };
 
     this.room.state.players.onChange = (p: ServerPlayer, key: string) => {
@@ -506,6 +528,10 @@ export class ImprovedGameScene extends Phaser.Scene {
     // Chat
     const enter = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     enter.on("down", () => this.toggleChat());
+    
+    // Instance selection
+    const escape = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    escape.on("down", () => this.returnToInstanceSelection());
   }
 
   private tryOpenShop() {
@@ -702,5 +728,26 @@ export class ImprovedGameScene extends Phaser.Scene {
     const a = ["Bold", "Swift", "Calm", "Brave", "Merry"];
     const b = ["Fox", "Owl", "Pine", "Fawn", "Wolf"];
     return `${a[Math.floor(Math.random() * a.length)]}${b[Math.floor(Math.random() * b.length)]}`;
+  }
+
+  private updatePlayerCount() {
+    if (this.playerCountText && this.room) {
+      const playerCount = this.room.state.players.size;
+      this.playerCountText.setText(`Players: ${playerCount}`);
+    }
+  }
+
+  private returnToInstanceSelection() {
+    // Disconnect from current room
+    if (this.room) {
+      this.room.leave();
+      this.room = undefined;
+    }
+    
+    // Clear selected instance
+    delete (window as any).selectedInstanceId;
+    
+    // Return to instance selection scene
+    this.scene.start("InstanceSelection");
   }
 }

@@ -1,6 +1,7 @@
 export const TILE_SIZE = 32;
 export const TICK_RATE = 20; // server ticks per second
-export const MAX_PLAYERS_PER_ROOM = 80;
+export const MAX_PLAYERS_PER_ROOM = 40; // Instance overflow threshold
+export const MAX_ROOMS = 10; // Maximum number of instances
 
 export type Direction = 'up' | 'down' | 'left' | 'right';
 
@@ -102,6 +103,29 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
   { id: "birthday_quest_reward", name: "Birthday Quest Reward", description: "Special quest completion reward", type: "cosmetic", icon: "🎁" },
   { id: "boss_slayer", name: "Anniversary Boss Slayer", description: "Defeated the anniversary boss", type: "title", icon: "⚔️" }
 ];
+
+// Instance Management
+export interface InstanceInfo {
+  id: string;
+  name: string;
+  playerCount: number;
+  maxPlayers: number;
+  status: 'active' | 'full' | 'starting';
+}
+
+export interface PartyInfo {
+  id: string;
+  leaderPlayerId: string;
+  memberPlayerIds: string[];
+  preferredInstanceId?: string;
+}
+
+export interface JoinInstanceOptions {
+  name?: string;
+  restore?: any;
+  instanceId?: string;
+  partyId?: string;
+}
 
 // Reward tracking constants
 export const EARLY_BIRD_LIMIT = 50;

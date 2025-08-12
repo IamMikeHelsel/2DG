@@ -1,10 +1,8 @@
 
-import colyseus from "colyseus";
+import { Room } from "colyseus";
 import { WorldState, Player, Mob } from "./state.js";
 import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS } from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
-
-const { Room } = colyseus;
 type Client = colyseus.Client;
 
 
@@ -19,6 +17,7 @@ export class GameRoom extends Room<WorldState> {
   private joinCounter = 0;
   private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
   private static SPAWN_DUMMY_PROBABILITY = 0.3;
+  private instanceId?: string;
 
   
   // Performance monitoring
@@ -32,6 +31,9 @@ export class GameRoom extends Room<WorldState> {
     this.setState(new WorldState());
     this.state.width = MAP.width;
     this.state.height = MAP.height;
+    
+    // Store instance ID for reference
+    this.instanceId = this.roomName;
 
     this.grid = generateMichiganish();
 
