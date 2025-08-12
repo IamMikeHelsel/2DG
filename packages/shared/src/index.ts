@@ -10,6 +10,14 @@ export interface InputMessage {
   down: boolean;
   left: boolean;
   right: boolean;
+  timestamp?: number; // for prediction timing
+}
+
+export interface PositionSnapshot {
+  x: number;
+  y: number;
+  seq: number;
+  timestamp: number;
 }
 
 export const MAP = {

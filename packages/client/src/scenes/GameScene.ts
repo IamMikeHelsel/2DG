@@ -41,13 +41,13 @@ export class GameScene extends Phaser.Scene {
     // Show splash immediately
     this.splashImage = this.add.image(this.scale.width / 2, this.scale.height / 2, "__splash__").setScrollFactor(0).setDepth(1000);
     this.splashImage.setOrigin(0.5);
-    const client = createClient();
-    const restore = loadSave();
-    const name = restore?.name || randomName();
+    
     try {
-      this.room = await client.joinOrCreate("toodee", { name, restore });
+      const { connectWithRetry } = await import("../net");
+      this.room = await connectWithRetry(3, 1000);
     } catch (err) {
-      this.showToast("Cannot connect to server. Check server and VITE_SERVER_URL.", "error");
+      console.error("[Connection] Failed to connect:", err);
+      this.showToast("Cannot connect to server. Check connection and try refreshing.", "error");
       return; // keep splash visible so restart is obvious
     }
 
