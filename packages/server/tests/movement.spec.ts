@@ -51,9 +51,9 @@ describe('Movement System', () => {
     const initialX = player?.x;
     const initialY = player?.y;
     
-    // Send movement input
+    // Send movement input by directly setting it (since we're testing the logic, not the message system)
     const input = { seq: 1, up: true, down: false, left: false, right: false };
-    room.onMessage('input', mockClient, input);
+    (room as any).inputs.set('test-player-1', input);
     
     // Simulate one tick
     room.update(1/20); // 20Hz = 50ms = 0.05s
@@ -74,9 +74,9 @@ describe('Movement System', () => {
     const initialX = player?.x;
     const initialY = player?.y;
     
-    // Send diagonal movement input
+    // Send diagonal movement input (directly set for testing)
     const input = { seq: 1, up: true, down: false, left: false, right: true };
-    room.onMessage('input', mockClient, input);
+    (room as any).inputs.set('test-player-1', input);
     
     // Simulate one tick
     room.update(1/20);

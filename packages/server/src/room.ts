@@ -1,5 +1,5 @@
 
-import colyseus from "colyseus";
+import { Room, Client } from "colyseus";
 import { WorldState, Player, Mob } from "./state.js";
 import { 
   TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS,
@@ -7,9 +7,6 @@ import {
   EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED
 } from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
-
-const { Room } = colyseus;
-type Client = colyseus.Client;
 
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
