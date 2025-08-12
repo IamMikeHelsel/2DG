@@ -10,6 +10,8 @@ export interface InputMessage {
   down: boolean;
   left: boolean;
   right: boolean;
+  attack?: boolean;
+  rangedAttack?: boolean;
 }
 
 export const MAP = {

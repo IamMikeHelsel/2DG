@@ -3,7 +3,7 @@ import { WorldState, Player, Mob, DroppedItem, Projectile } from "./state";
 import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS, calculateLevelFromXp, getBaseStatsForLevel, DEFAULT_ITEMS, MOB_TEMPLATES, LOOT_TABLES, MobType, AIState, DamageType } from "@toodee/shared";
 import { generateMichiganish, isWalkable, Grid } from "./map";
 
-type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
+type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean; attack?: boolean; rangedAttack?: boolean };
 
 export class GameRoom extends Room<WorldState> {
   private inputs = new Map<string, Input>();
@@ -34,6 +34,7 @@ export class GameRoom extends Room<WorldState> {
       this.broadcast("chat", msg);
     });
     this.onMessage("attack", (client) => this.handleAttack(client.sessionId));
+    this.onMessage("ranged_attack", (client) => this.handleRangedAttack(client.sessionId));
     this.onMessage("shop:list", (client) => this.handleShopList(client.sessionId));
     this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
     this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
@@ -160,6 +161,12 @@ export class GameRoom extends Room<WorldState> {
 
       p.lastSeq = inp.seq >>> 0;
     });
+    
+    // Update projectiles
+    this.updateProjectiles(dt);
+    
+    // Update mob AI
+    this.updateMobAI(dt);
   }
 
   private handleAttack(playerId: string) {
@@ -555,6 +562,316 @@ export class GameRoom extends Room<WorldState> {
         setTimeout(() => {
           this.state.droppedItems.delete(drop.id);
         }, 300000);
+      }
+    });
+  }
+
+  private handleRangedAttack(playerId: string) {
+    const now = Date.now();
+    const last = this.lastAttack.get(playerId) || 0;
+    if (now - last < this.attackCooldown * 1.5) return; // Longer cooldown for ranged
+    this.lastAttack.set(playerId, now);
+
+    const attacker = this.state.players.get(playerId);
+    if (!attacker || attacker.hp <= 0) return;
+
+    // Create projectile in direction player is facing
+    const projectile = new Projectile();
+    projectile.id = `proj_${Math.random().toString(36).slice(2, 8)}`;
+    projectile.ownerId = playerId;
+    projectile.x = attacker.x;
+    projectile.y = attacker.y;
+    
+    // Set velocity based on direction
+    const speed = 8; // tiles per second
+    switch (attacker.dir) {
+      case 0: // up
+        projectile.vx = 0;
+        projectile.vy = -speed;
+        break;
+      case 1: // right
+        projectile.vx = speed;
+        projectile.vy = 0;
+        break;
+      case 2: // down
+        projectile.vx = 0;
+        projectile.vy = speed;
+        break;
+      case 3: // left
+        projectile.vx = -speed;
+        projectile.vy = 0;
+        break;
+    }
+    
+    projectile.damage = Math.floor(attacker.magicAttack * 0.8); // Ranged uses magic attack
+    projectile.damageType = DamageType.Magical;
+    projectile.startTime = now;
+    projectile.maxRange = 8; // tiles
+    
+    this.state.projectiles.set(projectile.id, projectile);
+    
+    // Broadcast ranged attack
+    this.broadcast("ranged_attack", {
+      playerId: attacker.id,
+      playerName: attacker.name,
+      direction: attacker.dir
+    });
+  }
+  
+  private updateProjectiles(dt: number) {
+    const now = Date.now();
+    const toRemove: string[] = [];
+    
+    this.state.projectiles.forEach((proj, id) => {
+      // Move projectile
+      proj.x += proj.vx * dt;
+      proj.y += proj.vy * dt;
+      
+      // Check if projectile has traveled max range or hit wall
+      const owner = this.state.players.get(proj.ownerId);
+      const startDist = Math.hypot(
+        proj.x - (owner?.x || proj.x),
+        proj.y - (owner?.y || proj.y)
+      );
+      
+      if (startDist > proj.maxRange || !isWalkable(this.grid, Math.round(proj.x), Math.round(proj.y))) {
+        toRemove.push(id);
+        return;
+      }
+      
+      // Check collision with mobs
+      this.state.mobs.forEach((mob, mobId) => {
+        if (Math.round(proj.x) === Math.round(mob.x) && Math.round(proj.y) === Math.round(mob.y)) {
+          // Hit mob
+          const template = MOB_TEMPLATES[mob.type as MobType];
+          if (template) {
+            const levelMultiplier = 1 + (mob.level - 1) * 0.2;
+            const mobDefense = template.baseStats.magicDefense * levelMultiplier;
+            const finalDamage = Math.max(1, proj.damage - mobDefense);
+            
+            mob.hp = Math.max(0, mob.hp - finalDamage);
+            
+            // Broadcast hit
+            this.broadcast("projectile_hit", {
+              projectileId: id,
+              targetId: mobId,
+              damage: finalDamage,
+              targetType: "mob"
+            });
+            
+            if (mob.hp <= 0) {
+              const attacker = this.state.players.get(proj.ownerId);
+              if (attacker) {
+                this.grantXp(attacker, template.xpReward);
+                this.dropLoot(mob.x, mob.y, template.lootTableId, attacker.id);
+              }
+              
+              setTimeout(() => this.respawnMob(mobId), 15000);
+            } else {
+              mob.targetPlayerId = proj.ownerId;
+              mob.aiState = AIState.Chasing;
+            }
+          }
+          
+          toRemove.push(id);
+        }
+      });
+      
+      // Check collision with players (PvP)
+      this.state.players.forEach((player, playerId) => {
+        if (playerId === proj.ownerId) return; // Don't hit self
+        if (Math.round(proj.x) === Math.round(player.x) && Math.round(proj.y) === Math.round(player.y)) {
+          const finalDamage = Math.max(3, Math.floor(proj.damage * 0.2)); // Reduced PvP damage
+          player.hp = Math.max(0, player.hp - finalDamage);
+          
+          this.broadcast("projectile_hit", {
+            projectileId: id,
+            targetId: playerId,
+            damage: finalDamage,
+            targetType: "player"
+          });
+          
+          if (player.hp <= 0) {
+            setTimeout(() => {
+              const p = this.state.players.get(playerId);
+              if (p) {
+                p.x = Math.floor(MAP.width * 0.45);
+                p.y = Math.floor(MAP.height * 0.55);
+                p.hp = p.maxHp;
+                p.currentZone = "town";
+              }
+            }, 3000);
+          }
+          
+          toRemove.push(id);
+        }
+      });
+    });
+    
+    // Remove expired/hit projectiles
+    toRemove.forEach(id => this.state.projectiles.delete(id));
+  }
+
+  private updateMobAI(dt: number) {
+    const now = Date.now();
+    
+    this.state.mobs.forEach((mob, mobId) => {
+      if (mob.hp <= 0) return; // Dead mobs don't act
+      
+      const template = MOB_TEMPLATES[mob.type as MobType];
+      if (!template) return;
+      
+      // Check for nearby players
+      let closestPlayer: Player | null = null;
+      let closestDistance = Infinity;
+      
+      this.state.players.forEach((player: Player) => {
+        if (player.hp <= 0) return;
+        const distance = Math.hypot(mob.x - player.x, mob.y - player.y);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestPlayer = player;
+        }
+      });
+      
+      // AI State Machine
+      switch (mob.aiState) {
+        case AIState.Patrol:
+          // Random patrol around spawn point
+          if (Math.random() < 0.02) { // 2% chance per frame to change direction
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 2 + Math.random() * 3; // 2-5 tiles from center
+            const targetX = mob.patrolCenterX + Math.cos(angle) * distance;
+            const targetY = mob.patrolCenterY + Math.sin(angle) * distance;
+            
+            // Move towards patrol target
+            const dx = targetX - mob.x;
+            const dy = targetY - mob.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > 0.1) {
+              mob.x += (dx / dist) * template.moveSpeed * dt * 0.5; // Slower patrol speed
+              mob.y += (dy / dist) * template.moveSpeed * dt * 0.5;
+              
+              // Ensure we stay on walkable tiles
+              if (!isWalkable(this.grid, Math.round(mob.x), Math.round(mob.y))) {
+                mob.x -= (dx / dist) * template.moveSpeed * dt * 0.5;
+                mob.y -= (dy / dist) * template.moveSpeed * dt * 0.5;
+              }
+            }
+          }
+          
+          // Check for aggro
+          if (closestPlayer && closestDistance <= template.aggroRange) {
+            mob.aiState = AIState.Chasing;
+            mob.targetPlayerId = (closestPlayer as Player).id;
+          }
+          break;
+          
+        case AIState.Chasing:
+          const target = this.state.players.get(mob.targetPlayerId);
+          if (!target || target.hp <= 0) {
+            // Target lost, return to patrol
+            mob.aiState = AIState.Patrol;
+            mob.targetPlayerId = "";
+            break;
+          }
+          
+          const targetDistance = Math.hypot(mob.x - target.x, mob.y - target.y);
+          
+          // Check if we should flee (if mob has flee threshold)
+          if (template.fleeThreshold > 0 && (mob.hp / mob.maxHp) < template.fleeThreshold) {
+            mob.aiState = AIState.Fleeing;
+            break;
+          }
+          
+          // If in attack range, attack
+          if (targetDistance <= template.attackRange) {
+            mob.aiState = AIState.Attacking;
+            break;
+          }
+          
+          // Chase target
+          if (targetDistance > template.aggroRange * 1.5) {
+            // Lost target, return to patrol
+            mob.aiState = AIState.Patrol;
+            mob.targetPlayerId = "";
+          } else {
+            // Move towards target
+            const dx = target.x - mob.x;
+            const dy = target.y - mob.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > 0.1) {
+              const newX = mob.x + (dx / dist) * template.moveSpeed * dt;
+              const newY = mob.y + (dy / dist) * template.moveSpeed * dt;
+              
+              // Check walkability
+              if (isWalkable(this.grid, Math.round(newX), Math.round(newY))) {
+                mob.x = newX;
+                mob.y = newY;
+              }
+            }
+          }
+          break;
+          
+        case AIState.Attacking:
+          const attackTarget = this.state.players.get(mob.targetPlayerId);
+          if (!attackTarget || attackTarget.hp <= 0) {
+            mob.aiState = AIState.Patrol;
+            mob.targetPlayerId = "";
+            break;
+          }
+          
+          const attackDistance = Math.hypot(mob.x - attackTarget.x, mob.y - attackTarget.y);
+          if (attackDistance > template.attackRange) {
+            mob.aiState = AIState.Chasing;
+            break;
+          }
+          
+          // Perform attack (simple damage over time)
+          const mobAttackDamage = Math.floor(template.baseStats.attack * (1 + (mob.level - 1) * 0.2));
+          const finalDamage = Math.max(1, mobAttackDamage - attackTarget.defense);
+          
+          attackTarget.hp = Math.max(0, attackTarget.hp - finalDamage);
+          
+          // Broadcast mob attack
+          this.broadcast("mob_attack", {
+            mobId: mobId,
+            targetId: attackTarget.id,
+            damage: finalDamage
+          });
+          
+          // Return to chasing
+          mob.aiState = AIState.Chasing;
+          break;
+          
+        case AIState.Fleeing:
+          const fleeFrom = this.state.players.get(mob.targetPlayerId);
+          if (!fleeFrom) {
+            mob.aiState = AIState.Patrol;
+            mob.targetPlayerId = "";
+            break;
+          }
+          
+          // Move away from player
+          const dx = mob.x - fleeFrom.x;
+          const dy = mob.y - fleeFrom.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 0.1) {
+            const fleeX = mob.x + (dx / dist) * template.moveSpeed * dt * 1.2; // Flee faster
+            const fleeY = mob.y + (dy / dist) * template.moveSpeed * dt * 1.2;
+            
+            if (isWalkable(this.grid, Math.round(fleeX), Math.round(fleeY))) {
+              mob.x = fleeX;
+              mob.y = fleeY;
+            }
+          }
+          
+          // Stop fleeing if far enough or health recovered
+          if (dist > template.aggroRange * 2 || (mob.hp / mob.maxHp) > template.fleeThreshold * 1.5) {
+            mob.aiState = AIState.Patrol;
+            mob.targetPlayerId = "";
+          }
+          break;
       }
     });
   }
