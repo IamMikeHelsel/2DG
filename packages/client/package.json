@@ -10,8 +10,10 @@
     "lint": "echo \"(client lint placeholder)\""
   },
   "dependencies": {
+    "@sentry/browser": "^7.99.0",
     "colyseus.js": "^0.15.11",
-    "phaser": "^3.80.0"
+    "phaser": "^3.80.0",
+    "posthog-js": "^1.99.0"
   },
   "devDependencies": {
     "typescript": "^5.5.3",

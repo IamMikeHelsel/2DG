@@ -10,7 +10,7 @@ export interface InputMessage {
   down: boolean;
   left: boolean;
   right: boolean;
-  timestamp?: number; // for prediction timing
+  timestamp?: number; // for prediction timing and RTT measurement
 }
 
 export interface PositionSnapshot {
@@ -171,3 +171,53 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
 export const EARLY_BIRD_LIMIT = 50;
 export const BETA_TEST_PERIOD_DAYS = 14;
 export const BUG_HUNTER_REPORTS_REQUIRED = 5;
+
+// Re-export logging functionality
+export * from './logging.js';
+
+// Monitoring and Observability Types
+export interface LogEvent {
+  timestamp: string; // ISO-8601
+  level: 'info' | 'warn' | 'error' | 'debug';
+  service: 'server' | 'client';
+  event: string;
+  userId?: string;
+  sessionId?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface PerformanceMetrics {
+  serverTickTime: number; // ms
+  networkRTT?: number; // ms
+  clientFPS?: number;
+  memoryUsage?: number; // MB
+  playerCount: number;
+  timestamp: number;
+}
+
+export interface AlertThresholds {
+  serverTickTimeP95: number; // target: 8ms
+  networkRTTP95: number; // target: 120ms
+  errorRate: number; // target: <1%
+  memoryUsage: number; // target: <80%
+  playerCapacity: number; // CCU approaching capacity
+}
+
+export const DEFAULT_ALERT_THRESHOLDS: AlertThresholds = {
+  serverTickTimeP95: 8, // ms
+  networkRTTP95: 120, // ms
+  errorRate: 0.01, // 1%
+  memoryUsage: 0.8, // 80%
+  playerCapacity: 0.9, // 90% of MAX_PLAYERS_PER_ROOM
+};
+
+export interface MetricsCollection {
+  tickTimes: number[];
+  rttMeasurements: number[];
+  errorCount: number;
+  totalRequests: number;
+  memorySnapshots: number[];
+  fpsHistory: number[];
+  connectedUsers: number;
+  timestamp: number;
+}

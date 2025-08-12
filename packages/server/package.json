@@ -12,9 +12,13 @@
   },
   "dependencies": {
     "@colyseus/schema": "^2.0.28",
+    "@sentry/node": "^7.99.0",
     "colyseus": "^0.15.16",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "pino": "^8.18.0",
+    "pino-pretty": "^10.3.1",
+    "posthog-node": "^3.6.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
