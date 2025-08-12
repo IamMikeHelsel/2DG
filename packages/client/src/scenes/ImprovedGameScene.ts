@@ -4,6 +4,8 @@ import { TILE_SIZE, MAP, ChatMessage } from "@toodee/shared";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
 import { LightingSystem } from "../systems/LightingSystem";
 import { ParticleEffects } from "../systems/ParticleEffects";
+import { PerformanceMonitor } from "../systems/PerformanceMonitor";
+import { QualityManager } from "../systems/QualityManager";
 
 type ServerPlayer = { 
   id: string; 
@@ -40,6 +42,8 @@ export class ImprovedGameScene extends Phaser.Scene {
   // Lighting and VFX systems
   private lightingSystem!: LightingSystem;
   private particleEffects!: ParticleEffects;
+  private performanceMonitor!: PerformanceMonitor;
+  private qualityManager!: QualityManager;
   private torches: Phaser.GameObjects.Graphics[] = [];
   private crystals: Phaser.GameObjects.Graphics[] = [];
 
@@ -64,6 +68,11 @@ export class ImprovedGameScene extends Phaser.Scene {
     // Initialize lighting and particle systems
     this.lightingSystem = new LightingSystem(this);
     this.particleEffects = new ParticleEffects(this);
+    this.performanceMonitor = new PerformanceMonitor(this);
+    this.qualityManager = new QualityManager(this);
+    
+    // Connect systems
+    this.qualityManager.setSystems(this.lightingSystem, this.particleEffects, this.performanceMonitor);
 
     // Create animation sets for sprites
     this.createAnimations();
@@ -154,9 +163,17 @@ export class ImprovedGameScene extends Phaser.Scene {
         }).setScrollFactor(0).setDepth(100);
         
         // Add controls hint
-        this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat", {
+        this.add.text(12, this.scale.height - 60, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat", {
           color: "#aaaaaa",
           fontSize: "12px",
+          stroke: '#000000',
+          strokeThickness: 1
+        }).setScrollFactor(0).setDepth(100);
+        
+        // Add graphics settings hint
+        this.add.text(12, this.scale.height - 40, "Press G for graphics settings", {
+          color: "#aaaaaa",
+          fontSize: "10px",
           stroke: '#000000',
           strokeThickness: 1
         }).setScrollFactor(0).setDepth(100);

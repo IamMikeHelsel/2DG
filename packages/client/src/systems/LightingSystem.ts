@@ -16,8 +16,9 @@ export class LightingSystem {
   private lightLayer: Phaser.GameObjects.Graphics;
   private darknessOverlay: Phaser.GameObjects.Graphics;
   private lightSources: Map<string, LightSource> = new Map();
-  private ambientColor: number = 0x191970; // Dark blue ambient
-  private ambientAlpha: number = 0.7;
+  private ambientColor: number = 0x000033; // Darker blue ambient for better contrast
+  private ambientAlpha: number = 0.8; // Increased darkness for better lighting effect
+  private qualityLevel: 'low' | 'medium' | 'high' = 'high';
   
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -50,6 +51,10 @@ export class LightingSystem {
   setAmbientLight(color: number, alpha: number): void {
     this.ambientColor = color;
     this.ambientAlpha = alpha;
+  }
+  
+  setQualityLevel(level: 'low' | 'medium' | 'high'): void {
+    this.qualityLevel = level;
   }
   
   update(): void {
@@ -103,22 +108,25 @@ export class LightingSystem {
       intensity = Math.max(0, Math.min(1, intensity));
     }
     
-    // Create radial gradient for light
-    const gradient = this.createRadialGradient(light.x, light.y, radius, light.color, intensity);
-    
-    // Draw the light circle
+    // Main light circle
     this.lightLayer.fillStyle(light.color, intensity);
     this.lightLayer.fillCircle(light.x, light.y, radius);
     
-    // Add soft edge by drawing multiple circles with decreasing alpha
-    for (let i = 0; i < 3; i++) {
-      const edgeRadius = radius + (i + 1) * 5;
-      const edgeAlpha = intensity * (0.3 - i * 0.1);
+    // Add soft edges based on quality level
+    const edgeSteps = this.qualityLevel === 'high' ? 5 : this.qualityLevel === 'medium' ? 3 : 2;
+    for (let i = 0; i < edgeSteps; i++) {
+      const edgeRadius = radius + (i + 1) * 8;
+      const edgeAlpha = intensity * (0.4 - i * 0.08);
       if (edgeAlpha > 0) {
         this.lightLayer.fillStyle(light.color, edgeAlpha);
         this.lightLayer.fillCircle(light.x, light.y, edgeRadius);
       }
     }
+    
+    // Add inner bright core for better visibility
+    const coreAlpha = Math.min(1, intensity * 1.5);
+    this.lightLayer.fillStyle(0xffffff, coreAlpha * 0.3);
+    this.lightLayer.fillCircle(light.x, light.y, radius * 0.3);
   }
   
   private createRadialGradient(x: number, y: number, radius: number, color: number, intensity: number): any {
@@ -139,11 +147,11 @@ export class LightingSystem {
       id,
       x,
       y,
-      radius: 80,
+      radius: 120, // Increased radius for better visibility
       color: 0xff6600,
-      intensity: 0.6,
-      flickerAmount: 8,
-      flickerSpeed: 2
+      intensity: 0.8, // Increased intensity
+      flickerAmount: 10,
+      flickerSpeed: 3
     };
   }
   
@@ -152,11 +160,11 @@ export class LightingSystem {
       id,
       x,
       y,
-      radius: 60,
+      radius: 80, // Increased radius
       color,
-      intensity: 0.4,
-      flickerAmount: 2,
-      flickerSpeed: 0.5
+      intensity: 0.6, // Increased intensity
+      flickerAmount: 3,
+      flickerSpeed: 1
     };
   }
   
@@ -165,9 +173,9 @@ export class LightingSystem {
       id,
       x,
       y,
-      radius: 100,
+      radius: 140, // Increased radius for better gameplay visibility
       color: 0xffffff,
-      intensity: 0.3
+      intensity: 0.5 // Increased intensity
     };
   }
 }
