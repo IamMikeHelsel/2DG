@@ -13,6 +13,10 @@ export class Player extends Schema {
   @type("uint32") gold: number = 0;
   @type("uint16") pots: number = 0; // small potions
   
+  // Combat stats
+  @type("uint16") mana: number = 0;
+  @type("uint16") maxMana: number = 0;
+  
   // Founder rewards system
   @type("string") founderTier: string = "none";
   @type("uint64") joinTimestamp: number = 0;
@@ -39,6 +43,19 @@ export class Mob extends Schema {
   @type("uint16") maxHp: number = 0;
 }
 
+export class Projectile extends Schema {
+  @type("string") id: string = "";
+  @type("string") type: string = "";
+  @type("float32") x: number = 0;
+  @type("float32") y: number = 0;
+  @type("float32") targetX: number = 0;
+  @type("float32") targetY: number = 0;
+  @type("string") ownerId: string = "";
+  @type("uint16") damage: number = 0;
+  @type("uint32") createdAt: number = 0;
+}
+
 export class WorldState extends GameState {
   @type({ map: Mob }) mobs = new MapSchema<Mob>();
+  @type({ map: Projectile }) projectiles = new MapSchema<Projectile>();
 }

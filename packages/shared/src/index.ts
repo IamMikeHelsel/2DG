@@ -10,6 +10,8 @@ export interface InputMessage {
   down: boolean;
   left: boolean;
   right: boolean;
+  attack?: boolean;
+  rangedAttack?: boolean;
 }
 
 export const MAP = {
@@ -107,3 +109,29 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
 export const EARLY_BIRD_LIMIT = 50;
 export const BETA_TEST_PERIOD_DAYS = 14;
 export const BUG_HUNTER_REPORTS_REQUIRED = 5;
+
+// Combat constants
+export const MELEE_COOLDOWN = 400; // ms
+export const RANGED_COOLDOWN = 600; // ms
+export const PROJECTILE_SPEED = 8; // tiles per second
+export const PROJECTILE_RANGE = 5; // tiles
+export const MANA_REGEN_RATE = 2; // mana per second
+export const RANGED_ATTACK_MANA_COST = 10;
+
+// Projectile types
+export enum ProjectileType {
+  Arrow = "arrow",
+  Magic = "magic"
+}
+
+export interface ProjectileState {
+  id: string;
+  type: ProjectileType;
+  x: number;
+  y: number;
+  targetX: number;
+  targetY: number;
+  ownerId: string;
+  damage: number;
+  createdAt: number;
+}

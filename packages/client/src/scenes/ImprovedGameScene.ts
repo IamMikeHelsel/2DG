@@ -20,6 +20,7 @@ export class ImprovedGameScene extends Phaser.Scene {
   private players = new Map<string, Phaser.GameObjects.Container>();
   private playerSprites = new Map<string, Phaser.GameObjects.Sprite>();
   private mobs = new Map<string, { body: Phaser.GameObjects.Container; hp: Phaser.GameObjects.Rectangle }>();
+  private projectiles = new Map<string, Phaser.GameObjects.Sprite>();
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private seq = 0;
@@ -30,6 +31,7 @@ export class ImprovedGameScene extends Phaser.Scene {
   private chatInputEl?: HTMLInputElement;
   private hpText?: Phaser.GameObjects.Text;
   private goldText?: Phaser.GameObjects.Text;
+  private manaText?: Phaser.GameObjects.Text;
   private shopEl?: HTMLDivElement;
   private splashImage?: Phaser.GameObjects.Image;
   private toastRoot?: HTMLDivElement;
@@ -46,12 +48,18 @@ export class ImprovedGameScene extends Phaser.Scene {
     SpriteGenerator.generateCharacterSpritesheet(this, 'player', 0x3498db, 32);
     SpriteGenerator.generateCharacterSpritesheet(this, 'other_player', 0x9b59b6, 32);
     SpriteGenerator.generateCharacterSpritesheet(this, 'mob', 0xe74c3c, 32);
+    
+    // Generate projectile sprite
+    this.generateProjectileSprites();
   }
 
   async create() {
     this.cursors = this.input.keyboard!.createCursorKeys();
-    // Remove WASD since we use chat
-    this.keys = {} as any;
+    // Setup keys for ranged combat
+    this.keys = {
+      SPACE: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
+      SHIFT: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT)
+    };
 
     // Create animation sets for sprites
     this.createAnimations();
@@ -134,8 +142,15 @@ export class ImprovedGameScene extends Phaser.Scene {
           strokeThickness: 2
         }).setScrollFactor(0).setDepth(100);
         
+        this.manaText = this.add.text(12, 52, "Mana", { 
+          color: "#0099ff", 
+          fontSize: "14px",
+          stroke: '#000000',
+          strokeThickness: 2
+        }).setScrollFactor(0).setDepth(100);
+        
         // Add controls hint
-        this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat", {
+        this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE for melee | SHIFT for ranged | E for shop | ENTER to chat", {
           color: "#aaaaaa",
           fontSize: "12px",
           stroke: '#000000',
@@ -199,6 +214,7 @@ export class ImprovedGameScene extends Phaser.Scene {
       if (isLocal) {
         this.hpText?.setText(`HP: ${p.hp}/${p.maxHp}`);
         this.goldText?.setText(`Gold: ${p.gold}`);
+        this.manaText?.setText(`Mana: ${p.mana}/${p.maxMana}`);
         this.saveSave(p);
       }
     };
@@ -246,6 +262,52 @@ export class ImprovedGameScene extends Phaser.Scene {
       // Update HP
       const hpPercent = m.hp / m.maxHp;
       mob.hp.setScale(hpPercent, 1);
+    });
+
+    // Projectile handlers
+    this.room.state.projectiles?.onAdd?.((p: any, key: string) => {
+      const sprite = this.add.sprite(p.x * TILE_SIZE, p.y * TILE_SIZE, 'arrow');
+      sprite.setScale(0.6);
+      sprite.setDepth(15);
+      
+      // Calculate rotation based on direction
+      const dx = p.targetX - p.x;
+      const dy = p.targetY - p.y;
+      const angle = Math.atan2(dy, dx);
+      sprite.setRotation(angle);
+      
+      this.projectiles.set(key, sprite);
+    });
+
+    this.room.state.projectiles?.onChange?.((p: any, key: string) => {
+      const sprite = this.projectiles.get(key);
+      if (!sprite) return;
+      
+      // Smoothly move projectile
+      this.tweens.add({
+        targets: sprite,
+        x: p.x * TILE_SIZE,
+        y: p.y * TILE_SIZE,
+        duration: 50
+      });
+    });
+
+    this.room.state.projectiles?.onRemove?.((p: any, key: string) => {
+      const sprite = this.projectiles.get(key);
+      if (sprite) {
+        // Add hit effect
+        this.tweens.add({
+          targets: sprite,
+          scaleX: 1.5,
+          scaleY: 1.5,
+          alpha: 0,
+          duration: 200,
+          onComplete: () => {
+            sprite.destroy();
+            this.projectiles.delete(key);
+          }
+        });
+      }
     });
 
     // Setup input and UI
@@ -483,21 +545,21 @@ export class ImprovedGameScene extends Phaser.Scene {
           }
         }
         
+        // Check for attack inputs
+        const attack = this.keys.SPACE?.isDown;
+        const rangedAttack = this.keys.SHIFT?.isDown;
+        
         // Send input if changed or if still moving
         if (up !== lastInput.up || down !== lastInput.down || 
             left !== lastInput.left || right !== lastInput.right ||
-            up || down || left || right) {
+            up || down || left || right || attack || rangedAttack) {
           this.seq++;
-          this.room?.send("input", { seq: this.seq, up, down, left, right });
+          this.room?.send("input", { seq: this.seq, up, down, left, right, attack, rangedAttack });
           lastInput = { up, down, left, right };
         }
       },
       loop: true
     });
-
-    // Attack
-    const space = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    space.on("down", () => this.room?.send("attack"));
 
     // Shop
     const keyE = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E);
@@ -702,5 +764,16 @@ export class ImprovedGameScene extends Phaser.Scene {
     const a = ["Bold", "Swift", "Calm", "Brave", "Merry"];
     const b = ["Fox", "Owl", "Pine", "Fawn", "Wolf"];
     return `${a[Math.floor(Math.random() * a.length)]}${b[Math.floor(Math.random() * b.length)]}`;
+  }
+
+  private generateProjectileSprites() {
+    // Generate arrow sprite
+    const graphics = this.add.graphics();
+    graphics.fillStyle(0x8B4513); // Brown for arrow shaft
+    graphics.fillRect(0, 6, 12, 2);
+    graphics.fillStyle(0xC0C0C0); // Silver for arrow head
+    graphics.fillTriangle(12, 4, 12, 10, 16, 7);
+    graphics.generateTexture('arrow', 16, 14);
+    graphics.destroy();
   }
 }

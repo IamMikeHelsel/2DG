@@ -1,21 +1,21 @@
 
 import colyseus from "colyseus";
-import { WorldState, Player, Mob } from "./state.js";
-import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS } from "@toodee/shared";
+import { WorldState, Player, Mob, Projectile } from "./state.js";
+import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS, MELEE_COOLDOWN, RANGED_COOLDOWN, PROJECTILE_SPEED, PROJECTILE_RANGE, MANA_REGEN_RATE, RANGED_ATTACK_MANA_COST, ProjectileType } from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
 
 const { Room } = colyseus;
 type Client = colyseus.Client;
 
 
-type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
+type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean; attack?: boolean; rangedAttack?: boolean };
 
 export class GameRoom extends Room<WorldState> {
   private inputs = new Map<string, Input>();
   private grid!: Grid;
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
-  private attackCooldown = 400; // ms
+  private lastRangedAttack = new Map<string, number>();
   private joinCounter = 0;
   private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
 
@@ -60,6 +60,8 @@ export class GameRoom extends Room<WorldState> {
     p.name = options?.name || "Adventurer";
     p.maxHp = 100;
     p.hp = p.maxHp;
+    p.maxMana = 100;
+    p.mana = p.maxMana;
     p.gold = 20;
     p.pots = 0;
     
@@ -104,10 +106,19 @@ export class GameRoom extends Room<WorldState> {
   update(dt: number) {
     const tickStart = performance.now();
     
-    // per-player movement
+    // per-player movement and mana regeneration
     this.state.players.forEach((p, id) => {
       const inp = this.inputs.get(id);
       if (!inp) return;
+      
+      // Handle input attacks
+      if (inp.attack) {
+        this.handleAttack(id);
+      }
+      if (inp.rangedAttack) {
+        this.handleRangedAttack(id);
+      }
+      
       const vel = { x: 0, y: 0 };
       if (inp.up) vel.y -= 1;
       if (inp.down) vel.y += 1;
@@ -136,7 +147,15 @@ export class GameRoom extends Room<WorldState> {
       else if (vel.x < 0) p.dir = 3;
 
       p.lastSeq = inp.seq >>> 0;
+      
+      // Mana regeneration
+      if (p.mana < p.maxMana) {
+        p.mana = Math.min(p.maxMana, p.mana + MANA_REGEN_RATE * dt);
+      }
     });
+    
+    // Update projectiles
+    this.updateProjectiles(dt);
     
     // Performance monitoring
     const tickEnd = performance.now();
@@ -160,7 +179,7 @@ export class GameRoom extends Room<WorldState> {
   private handleAttack(playerId: string) {
     const now = Date.now();
     const last = this.lastAttack.get(playerId) || 0;
-    if (now - last < this.attackCooldown) return;
+    if (now - last < MELEE_COOLDOWN) return;
     this.lastAttack.set(playerId, now);
 
     const attacker = this.state.players.get(playerId);
@@ -205,6 +224,131 @@ export class GameRoom extends Room<WorldState> {
           }, 1500);
         }
       }
+    });
+  }
+
+  private handleRangedAttack(playerId: string) {
+    const now = Date.now();
+    const last = this.lastRangedAttack.get(playerId) || 0;
+    if (now - last < RANGED_COOLDOWN) return;
+    
+    const attacker = this.state.players.get(playerId);
+    if (!attacker) return;
+    
+    // Check mana cost
+    if (attacker.mana < RANGED_ATTACK_MANA_COST) return;
+    
+    this.lastRangedAttack.set(playerId, now);
+    attacker.mana -= RANGED_ATTACK_MANA_COST;
+    
+    // Create projectile
+    const projectile = new Projectile();
+    projectile.id = `proj_${Math.random().toString(36).slice(2, 8)}`;
+    projectile.type = ProjectileType.Arrow;
+    projectile.x = attacker.x;
+    projectile.y = attacker.y;
+    projectile.ownerId = playerId;
+    projectile.damage = 20;
+    projectile.createdAt = now;
+    
+    // Calculate target position based on player direction
+    const direction = neighbor(0, 0, attacker.dir);
+    projectile.targetX = attacker.x + direction.x * PROJECTILE_RANGE;
+    projectile.targetY = attacker.y + direction.y * PROJECTILE_RANGE;
+    
+    this.state.projectiles.set(projectile.id, projectile);
+  }
+
+  private updateProjectiles(dt: number) {
+    const now = Date.now();
+    const projectilesToRemove: string[] = [];
+    
+    this.state.projectiles.forEach((projectile, id) => {
+      // Remove old projectiles (max 2 seconds lifespan)
+      if (now - projectile.createdAt > 2000) {
+        projectilesToRemove.push(id);
+        return;
+      }
+      
+      // Move projectile
+      const dx = projectile.targetX - projectile.x;
+      const dy = projectile.targetY - projectile.y;
+      const distance = Math.hypot(dx, dy);
+      
+      if (distance < 0.1) {
+        // Projectile reached target
+        projectilesToRemove.push(id);
+        return;
+      }
+      
+      const normalizedDx = dx / distance;
+      const normalizedDy = dy / distance;
+      
+      projectile.x += normalizedDx * PROJECTILE_SPEED * dt;
+      projectile.y += normalizedDy * PROJECTILE_SPEED * dt;
+      
+      // Check for collision with terrain
+      const px = Math.round(projectile.x);
+      const py = Math.round(projectile.y);
+      if (!isWalkable(this.grid, px, py)) {
+        projectilesToRemove.push(id);
+        return;
+      }
+      
+      // Check for collision with mobs
+      let hitTarget = false;
+      this.state.mobs.forEach((mob, mobId) => {
+        if (hitTarget) return;
+        const mx = Math.round(mob.x);
+        const my = Math.round(mob.y);
+        if (px === mx && py === my && mob.hp > 0) {
+          mob.hp = Math.max(0, mob.hp - projectile.damage);
+          hitTarget = true;
+          projectilesToRemove.push(id);
+          
+          if (mob.hp === 0) {
+            // Reward the attacker
+            const attacker = this.state.players.get(projectile.ownerId);
+            if (attacker) {
+              attacker.hp = Math.min(attacker.maxHp, attacker.hp + 10);
+              attacker.gold = Math.min(999999, attacker.gold + 10);
+            }
+            const mobIdToRespawn = mobId;
+            setTimeout(() => this.respawnMob(mobIdToRespawn), 2000);
+          }
+        }
+      });
+      
+      if (hitTarget) return;
+      
+      // Check for collision with players (excluding the owner)
+      this.state.players.forEach((player, targetId) => {
+        if (hitTarget || targetId === projectile.ownerId) return;
+        const tx = Math.round(player.x);
+        const ty = Math.round(player.y);
+        if (px === tx && py === ty && player.hp > 0) {
+          player.hp = Math.max(0, player.hp - projectile.damage);
+          hitTarget = true;
+          projectilesToRemove.push(id);
+          
+          if (player.hp === 0) {
+            // Respawn at town center after short delay
+            const playerId = targetId;
+            setTimeout(() => {
+              const p = this.state.players.get(playerId);
+              if (!p) return;
+              p.x = Math.floor(MAP.width * 0.45);
+              p.y = Math.floor(MAP.height * 0.55);
+              p.hp = p.maxHp;
+            }, 1500);
+          }
+        }
+      });
+    });
+    
+    // Remove completed/expired projectiles
+    projectilesToRemove.forEach(id => {
+      this.state.projectiles.delete(id);
     });
   }
 
