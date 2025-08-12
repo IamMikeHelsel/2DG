@@ -135,7 +135,7 @@ export class ImprovedGameScene extends Phaser.Scene {
         }).setScrollFactor(0).setDepth(100);
         
         // Add controls hint
-        this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat", {
+        this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat (global)", {
           color: "#aaaaaa",
           fontSize: "12px",
           stroke: '#000000',
@@ -259,6 +259,19 @@ export class ImprovedGameScene extends Phaser.Scene {
     
     // Handle chat
     this.room.onMessage("chat", (msg: ChatMessage) => this.appendChat(msg));
+    
+    // Handle chat history for new players
+    this.room.onMessage("chat_history", (history: ChatMessage[]) => {
+      if (!this.chatLogEl) return;
+      // Clear welcome message and load history
+      this.chatLogEl.innerHTML = "";
+      history.forEach(msg => this.appendChat(msg));
+    });
+    
+    // Handle chat errors (rate limiting, etc)
+    this.room.onMessage("chat_error", (error: string) => {
+      this.showToast(error, "error");
+    });
 
     // Fade splash
     if (this.splashImage) {
@@ -515,11 +528,17 @@ export class ImprovedGameScene extends Phaser.Scene {
   private toggleChat() {
     if (!this.chatInputEl) return;
     
-    if (this.chatInputEl.style.display === "none") {
+    if (this.chatInputEl.style.display === "none" || !this.chatInputEl.style.display) {
       this.chatInputEl.style.display = "block";
       this.chatInputEl.focus();
+      // Add typing indicator effect
+      this.chatInputEl.style.transform = "scale(1.02)";
+      setTimeout(() => {
+        if (this.chatInputEl) this.chatInputEl.style.transform = "scale(1)";
+      }, 150);
     } else {
       this.chatInputEl.style.display = "none";
+      this.chatInputEl.blur();
     }
   }
 
@@ -530,38 +549,75 @@ export class ImprovedGameScene extends Phaser.Scene {
       position: "absolute",
       bottom: "20px",
       left: "20px",
-      width: "300px",
-      height: "150px",
+      width: "400px", // Increased width
+      height: "200px", // Increased height
       display: "flex",
       flexDirection: "column",
       pointerEvents: "none",
-      zIndex: 10
+      zIndex: 10,
+      fontFamily: "monospace"
     });
 
     const log = document.createElement("div");
     Object.assign(log.style, {
       flex: "1",
       overflowY: "auto",
-      background: "rgba(0,0,0,0.5)",
-      padding: "8px",
-      borderRadius: "4px",
-      fontSize: "12px",
+      background: "rgba(0,0,0,0.8)", // More opaque
+      padding: "10px",
+      borderRadius: "6px",
+      fontSize: "13px",
       color: "#ffffff",
-      marginBottom: "4px"
+      marginBottom: "6px",
+      border: "1px solid rgba(255,255,255,0.2)",
+      boxShadow: "0 2px 10px rgba(0,0,0,0.5)"
     });
+
+    // Add scrollbar styling
+    const style = document.createElement('style');
+    style.textContent = `
+      div::-webkit-scrollbar {
+        width: 6px;
+      }
+      div::-webkit-scrollbar-track {
+        background: rgba(255,255,255,0.1);
+        border-radius: 3px;
+      }
+      div::-webkit-scrollbar-thumb {
+        background: rgba(255,255,255,0.3);
+        border-radius: 3px;
+      }
+      div::-webkit-scrollbar-thumb:hover {
+        background: rgba(255,255,255,0.5);
+      }
+    `;
+    document.head.appendChild(style);
 
     const input = document.createElement("input");
     input.type = "text";
-    input.placeholder = "Press Enter to chat...";
+    input.placeholder = "Press Enter to chat (max 200 chars)...";
+    input.maxLength = 200;
     Object.assign(input.style, {
-      padding: "4px 8px",
-      background: "rgba(0,0,0,0.7)",
-      border: "1px solid rgba(255,255,255,0.2)",
+      padding: "6px 10px",
+      background: "rgba(0,0,0,0.8)",
+      border: "1px solid rgba(255,255,255,0.3)",
       borderRadius: "4px",
       color: "#ffffff",
-      fontSize: "12px",
+      fontSize: "13px",
       display: "none",
-      pointerEvents: "all"
+      pointerEvents: "all",
+      outline: "none",
+      boxShadow: "0 0 5px rgba(0,100,255,0.3)"
+    });
+
+    // Add focus styling
+    input.addEventListener("focus", () => {
+      input.style.borderColor = "rgba(0,150,255,0.6)";
+      input.style.boxShadow = "0 0 8px rgba(0,150,255,0.5)";
+    });
+    
+    input.addEventListener("blur", () => {
+      input.style.borderColor = "rgba(255,255,255,0.3)";
+      input.style.boxShadow = "0 0 5px rgba(0,100,255,0.3)";
     });
 
     input.addEventListener("keydown", (e) => {
@@ -571,6 +627,7 @@ export class ImprovedGameScene extends Phaser.Scene {
         input.style.display = "none";
       } else if (e.key === "Escape") {
         input.style.display = "none";
+        input.blur();
       }
     });
 
@@ -580,18 +637,63 @@ export class ImprovedGameScene extends Phaser.Scene {
     
     this.chatLogEl = log;
     this.chatInputEl = input;
+    
+    // Add welcome message
+    const welcomeMsg = document.createElement("div");
+    welcomeMsg.style.color = "#888";
+    welcomeMsg.style.fontStyle = "italic";
+    welcomeMsg.style.marginBottom = "5px";
+    welcomeMsg.textContent = "Welcome! Press Enter to chat with other players.";
+    log.appendChild(welcomeMsg);
   }
 
   private appendChat(msg: ChatMessage) {
     if (!this.chatLogEl) return;
+    
     const line = document.createElement("div");
+    line.style.marginBottom = "3px";
+    line.style.lineHeight = "1.4";
+    line.style.wordWrap = "break-word";
+    
     const time = new Date(msg.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    line.textContent = `[${time}] ${msg.from}: ${msg.text}`;
+    
+    // Create time span
+    const timeSpan = document.createElement("span");
+    timeSpan.style.color = "#888";
+    timeSpan.style.fontSize = "11px";
+    timeSpan.textContent = `[${time}] `;
+    
+    // Create name span
+    const nameSpan = document.createElement("span");
+    nameSpan.style.color = msg.color || "#ffffff";
+    nameSpan.style.fontWeight = "bold";
+    nameSpan.textContent = `${msg.from}: `;
+    
+    // Create message span
+    const messageSpan = document.createElement("span");
+    messageSpan.style.color = "#ffffff";
+    messageSpan.textContent = msg.text;
+    
+    line.appendChild(timeSpan);
+    line.appendChild(nameSpan);
+    line.appendChild(messageSpan);
+    
     this.chatLogEl.appendChild(line);
+    
+    // Maintain 50 message limit
     while (this.chatLogEl.childElementCount > 50) {
       this.chatLogEl.firstElementChild?.remove();
     }
+    
+    // Smooth scroll to bottom
     this.chatLogEl.scrollTop = this.chatLogEl.scrollHeight;
+    
+    // Add subtle flash effect for new messages
+    line.style.backgroundColor = "rgba(255,255,255,0.1)";
+    setTimeout(() => {
+      line.style.backgroundColor = "transparent";
+      line.style.transition = "background-color 1s ease";
+    }, 100);
   }
 
   private showShop(payload: any) {

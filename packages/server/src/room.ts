@@ -13,6 +13,9 @@ export class GameRoom extends Room<WorldState> {
   private attackCooldown = 400; // ms
   private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
   private joinCounter = 0;
+  private lastChatTime = new Map<string, number>(); // Rate limiting for chat
+  private chatCooldown = 1000; // ms between chat messages
+  private chatHistory: ChatMessage[] = []; // Store last 50 messages
 
   onCreate(options: any) {
     this.setPatchRate(1000 / 10); // send state ~10/s; interpolate on client
@@ -28,9 +31,34 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("chat", (client, text: string) => {
       const p = this.state.players.get(client.sessionId);
       if (!p) return;
+      
+      // Rate limiting
+      const now = Date.now();
+      const lastChat = this.lastChatTime.get(client.sessionId) || 0;
+      if (now - lastChat < this.chatCooldown) {
+        client.send("chat_error", "Please wait before sending another message");
+        return;
+      }
+      this.lastChatTime.set(client.sessionId, now);
+      
       const clean = sanitizeChat(text);
       if (!clean) return;
-      const msg: ChatMessage = { from: p.name || "Adventurer", text: clean, ts: Date.now() };
+      
+      // Create message with player info
+      const displayName = p.displayTitle ? `${p.displayTitle} ${p.name}` : (p.name || "Adventurer");
+      const msg: ChatMessage = { 
+        from: displayName, 
+        text: clean, 
+        ts: now,
+        color: p.chatColor 
+      };
+      
+      // Add to history and maintain 50 message limit
+      this.chatHistory.push(msg);
+      if (this.chatHistory.length > 50) {
+        this.chatHistory.shift();
+      }
+      
       this.broadcast("chat", msg);
     });
     this.onMessage("attack", (client) => this.handleAttack(client.sessionId));
@@ -82,11 +110,17 @@ export class GameRoom extends Room<WorldState> {
     if (typeof options?.restore?.gold === "number") p.gold = Math.max(0, Math.min(999999, Math.floor(options.restore.gold)));
     if (typeof options?.restore?.pots === "number") p.pots = Math.max(0, Math.min(999, Math.floor(options.restore.pots)));
     this.state.players.set(client.sessionId, p);
+    
+    // Send chat history to new player
+    if (this.chatHistory.length > 0) {
+      client.send("chat_history", this.chatHistory);
+    }
   }
 
   onLeave(client: Client, consented: boolean) {
     this.state.players.delete(client.sessionId);
     this.inputs.delete(client.sessionId);
+    this.lastChatTime.delete(client.sessionId); // Clean up chat rate limiting
   }
 
   update(dt: number) {
@@ -372,8 +406,22 @@ function sanitizeChat(s: string): string | null {
   if (typeof s !== "string") return null;
   s = s.replace(/\s+/g, " ").trim();
   if (!s) return null;
-  if (s.length > 140) s = s.slice(0, 140);
-  return s;
+  if (s.length > 200) s = s.slice(0, 200); // Increased from 140 to 200
+  
+  // Basic profanity filter - replace common inappropriate words
+  const badWords = [
+    'damn', 'hell', 'crap', 'fuck', 'shit', 'ass', 'bitch', 'bastard',
+    'piss', 'dick', 'cock', 'pussy', 'whore', 'slut', 'fag', 'nigger',
+    'retard', 'gay', 'homo', 'nazi', 'hitler'
+  ];
+  
+  let filtered = s;
+  badWords.forEach(word => {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    filtered = filtered.replace(regex, '*'.repeat(word.length));
+  });
+  
+  return filtered;
 }
 
 function clamp(n: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, n)); }

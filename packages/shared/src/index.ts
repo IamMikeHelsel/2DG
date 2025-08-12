@@ -28,6 +28,7 @@ export interface ChatMessage {
   from: string;
   text: string;
   ts: number; // epoch ms
+  color?: string; // optional chat color
 }
 
 // Shop / NPCs
