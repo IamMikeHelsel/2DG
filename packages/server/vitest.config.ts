@@ -1,11 +1,17 @@
 import { defineConfig } from 'vitest/config';
-import tsconfigPaths from 'vite-tsconfig-paths';
+import path from 'path';
 
 export default defineConfig({
-  plugins: [tsconfigPaths()],
+  resolve: {
+    alias: {
+      '@toodee/shared': path.resolve(__dirname, '../shared/src')
+    }
+  },
   test: {
     environment: 'node',
-    include: ['tests/**/*.spec.ts']
+    include: ['tests/**/*.spec.ts'],
+    testTimeout: 30000, // Increase timeout for E2E tests
+    hookTimeout: 10000  // Increase timeout for setup/teardown
   }
 });
 
