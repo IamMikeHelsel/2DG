@@ -107,3 +107,70 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
 export const EARLY_BIRD_LIMIT = 50;
 export const BETA_TEST_PERIOD_DAYS = 14;
 export const BUG_HUNTER_REPORTS_REQUIRED = 5;
+
+// Crafting System
+export interface CraftingMaterial {
+  id: string;
+  name: string;
+  description: string;
+  icon?: string;
+}
+
+export interface CraftingRecipe {
+  id: string;
+  name: string;
+  description: string;
+  materials: { materialId: string; quantity: number }[];
+  result: { itemId: string; quantity: number };
+  craftingTime: number; // seconds
+  icon?: string;
+}
+
+export interface PlayerInventory {
+  [materialId: string]: number;
+}
+
+export interface CraftingRequest {
+  recipeId: string;
+}
+
+export interface CraftingResponse {
+  success: boolean;
+  message: string;
+  newInventory?: PlayerInventory;
+  craftedItem?: { itemId: string; quantity: number };
+}
+
+export const CRAFTING_MATERIALS: CraftingMaterial[] = [
+  { id: "herbs", name: "Herbs", description: "Common healing herbs", icon: "🌿" },
+  { id: "empty_vial", name: "Empty Vial", description: "Glass vial for potions", icon: "🧪" },
+  { id: "iron_ore", name: "Iron Ore", description: "Raw iron for smithing", icon: "⛏️" },
+  { id: "wood", name: "Wood", description: "Sturdy wood for crafting", icon: "🪵" },
+];
+
+export const CRAFTING_RECIPES: CraftingRecipe[] = [
+  {
+    id: "health_potion",
+    name: "Health Potion",
+    description: "Restores 50 HP",
+    materials: [
+      { materialId: "herbs", quantity: 2 },
+      { materialId: "empty_vial", quantity: 1 }
+    ],
+    result: { itemId: "health_potion", quantity: 1 },
+    craftingTime: 3,
+    icon: "🧪"
+  },
+  {
+    id: "iron_sword",
+    name: "Iron Sword",
+    description: "A sturdy iron sword",
+    materials: [
+      { materialId: "iron_ore", quantity: 3 },
+      { materialId: "wood", quantity: 1 }
+    ],
+    result: { itemId: "iron_sword", quantity: 1 },
+    craftingTime: 5,
+    icon: "⚔️"
+  }
+];

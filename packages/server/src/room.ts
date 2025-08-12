@@ -1,11 +1,11 @@
 
 import colyseus from "colyseus";
 import { WorldState, Player, Mob } from "./state.js";
-import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, REFERRAL_REWARDS, ANNIVERSARY_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED } from "@toodee/shared";
+import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, REFERRAL_REWARDS, ANNIVERSARY_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, CRAFTING_MATERIALS, CRAFTING_RECIPES, type CraftingRequest, type CraftingResponse, type PlayerInventory } from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
 
 const { Room } = colyseus;
-type Client = colyseus.Client;
+type Client = any;
 
 const SPAWN_DUMMY_PROBABILITY = 0.3; // 30% chance to spawn dummy when buying potions
 
@@ -52,6 +52,11 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
     this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
     this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
+    
+    // Crafting system messages
+    this.onMessage("crafting:recipes", (client) => this.handleCraftingRecipes(client.sessionId));
+    this.onMessage("crafting:start", (client, data: CraftingRequest) => this.handleCraftingStart(client.sessionId, data));
+    this.onMessage("crafting:cancel", (client) => this.handleCraftingCancel(client.sessionId));
 
     this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
   }
@@ -72,6 +77,19 @@ export class GameRoom extends Room<WorldState> {
     p.anniversaryParticipated = false;
     p.displayTitle = "";
     p.chatColor = "#FFFFFF";
+    
+    // Initialize crafting system
+    const startingInventory: PlayerInventory = {
+      "herbs": 5,
+      "empty_vial": 2,
+      "iron_ore": 4,
+      "wood": 3
+    };
+    p.inventory = JSON.stringify(startingInventory);
+    p.knownRecipes.push("health_potion"); // Start with health potion recipe
+    p.isCrafting = false;
+    p.currentCraftingRecipe = "";
+    p.craftingStartTime = 0;
     
     // Determine founder tier
     this.joinCounter++;
@@ -139,6 +157,9 @@ export class GameRoom extends Room<WorldState> {
 
       p.lastSeq = inp.seq >>> 0;
     });
+    
+    // Update crafting progress
+    this.updateCrafting();
     
     // Performance monitoring
     const tickEnd = performance.now();
@@ -413,6 +434,167 @@ export class GameRoom extends Room<WorldState> {
         message: `Anniversary reward unlocked: ${reward.name}!`
       });
     }
+  }
+
+  private updateCrafting() {
+    const now = Date.now();
+    
+    this.state.players.forEach((p, playerId) => {
+      if (!p.isCrafting || !p.currentCraftingRecipe) return;
+      
+      const recipe = CRAFTING_RECIPES.find(r => r.id === p.currentCraftingRecipe);
+      if (!recipe) {
+        // Invalid recipe, cancel crafting
+        p.isCrafting = false;
+        p.currentCraftingRecipe = "";
+        p.craftingStartTime = 0;
+        return;
+      }
+      
+      const elapsedTime = (now - p.craftingStartTime) / 1000; // seconds
+      if (elapsedTime >= recipe.craftingTime) {
+        // Crafting complete
+        this.completeCrafting(playerId, recipe);
+      }
+    });
+  }
+
+  private completeCrafting(playerId: string, recipe: any) {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    
+    const inventory: PlayerInventory = JSON.parse(p.inventory);
+    
+    // Add the crafted item to inventory
+    const resultItemId = recipe.result.itemId;
+    const resultQuantity = recipe.result.quantity;
+    
+    if (resultItemId === "health_potion") {
+      p.pots = Math.min(999, p.pots + resultQuantity);
+    } else {
+      // For other items, add to inventory
+      inventory[resultItemId] = (inventory[resultItemId] || 0) + resultQuantity;
+      p.inventory = JSON.stringify(inventory);
+    }
+    
+    // Reset crafting state
+    p.isCrafting = false;
+    p.currentCraftingRecipe = "";
+    p.craftingStartTime = 0;
+    
+    // Send completion message to client
+    this.clients.find(c => c.sessionId === playerId)?.send("crafting:complete", {
+      success: true,
+      message: `Successfully crafted ${recipe.name}!`,
+      craftedItem: recipe.result,
+      newInventory: inventory
+    });
+  }
+
+  private handleCraftingRecipes(playerId: string) {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    
+    const inventory: PlayerInventory = JSON.parse(p.inventory);
+    const availableRecipes = CRAFTING_RECIPES.filter(recipe => 
+      p.knownRecipes.includes(recipe.id)
+    );
+    
+    this.clients.find(c => c.sessionId === playerId)?.send("crafting:recipes", {
+      recipes: availableRecipes,
+      materials: CRAFTING_MATERIALS,
+      inventory: inventory,
+      isCrafting: p.isCrafting,
+      currentRecipe: p.currentCraftingRecipe,
+      craftingProgress: p.isCrafting ? 
+        Math.min(1, (Date.now() - p.craftingStartTime) / 1000 / 
+          (CRAFTING_RECIPES.find(r => r.id === p.currentCraftingRecipe)?.craftingTime || 1)) : 0
+    });
+  }
+
+  private handleCraftingStart(playerId: string, data: CraftingRequest) {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    
+    if (p.isCrafting) {
+      this.clients.find(c => c.sessionId === playerId)?.send("crafting:result", {
+        success: false,
+        message: "Already crafting an item"
+      });
+      return;
+    }
+    
+    const recipe = CRAFTING_RECIPES.find(r => r.id === data.recipeId);
+    if (!recipe) {
+      this.clients.find(c => c.sessionId === playerId)?.send("crafting:result", {
+        success: false,
+        message: "Recipe not found"
+      });
+      return;
+    }
+    
+    if (!p.knownRecipes.includes(recipe.id)) {
+      this.clients.find(c => c.sessionId === playerId)?.send("crafting:result", {
+        success: false,
+        message: "Recipe not unlocked"
+      });
+      return;
+    }
+    
+    const inventory: PlayerInventory = JSON.parse(p.inventory);
+    
+    // Check if player has required materials
+    for (const material of recipe.materials) {
+      const available = inventory[material.materialId] || 0;
+      if (available < material.quantity) {
+        const materialName = CRAFTING_MATERIALS.find(m => m.id === material.materialId)?.name || material.materialId;
+        this.clients.find(c => c.sessionId === playerId)?.send("crafting:result", {
+          success: false,
+          message: `Not enough ${materialName} (need ${material.quantity}, have ${available})`
+        });
+        return;
+      }
+    }
+    
+    // Consume materials
+    for (const material of recipe.materials) {
+      inventory[material.materialId] -= material.quantity;
+    }
+    
+    // Start crafting
+    p.inventory = JSON.stringify(inventory);
+    p.isCrafting = true;
+    p.currentCraftingRecipe = recipe.id;
+    p.craftingStartTime = Date.now();
+    
+    this.clients.find(c => c.sessionId === playerId)?.send("crafting:result", {
+      success: true,
+      message: `Started crafting ${recipe.name}`,
+      newInventory: inventory
+    });
+  }
+
+  private handleCraftingCancel(playerId: string) {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+    
+    if (!p.isCrafting) {
+      this.clients.find(c => c.sessionId === playerId)?.send("crafting:result", {
+        success: false,
+        message: "Not currently crafting"
+      });
+      return;
+    }
+    
+    // Return materials (optional - for now we don't return materials on cancel)
+    p.isCrafting = false;
+    p.currentCraftingRecipe = "";
+    p.craftingStartTime = 0;
+    
+    this.clients.find(c => c.sessionId === playerId)?.send("crafting:result", {
+      success: true,
+      message: "Crafting cancelled"
+    });
   }
 }
 

@@ -22,6 +22,13 @@ export class Player extends Schema {
   @type("boolean") anniversaryParticipated: boolean = false;
   @type("string") displayTitle: string = "";
   @type("string") chatColor: string = "#FFFFFF";
+  
+  // Crafting System
+  @type("string") inventory: string = "{}"; // JSON-encoded PlayerInventory
+  @type(["string"]) knownRecipes = new ArraySchema<string>(); // recipe IDs
+  @type("boolean") isCrafting: boolean = false;
+  @type("string") currentCraftingRecipe: string = "";
+  @type("uint64") craftingStartTime: number = 0;
 }
 
 export class GameState extends Schema {

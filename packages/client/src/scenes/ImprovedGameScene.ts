@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { createClient } from "../net";
-import { TILE_SIZE, MAP, ChatMessage } from "@toodee/shared";
+import { TILE_SIZE, MAP, ChatMessage, CRAFTING_MATERIALS, CRAFTING_RECIPES } from "@toodee/shared";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
 
 type ServerPlayer = { 
@@ -31,6 +31,7 @@ export class ImprovedGameScene extends Phaser.Scene {
   private hpText?: Phaser.GameObjects.Text;
   private goldText?: Phaser.GameObjects.Text;
   private shopEl?: HTMLDivElement;
+  private craftingEl?: HTMLDivElement;
   private splashImage?: Phaser.GameObjects.Image;
   private toastRoot?: HTMLDivElement;
   private terrainMap: number[][] = [];
@@ -256,6 +257,11 @@ export class ImprovedGameScene extends Phaser.Scene {
     // Handle shop
     this.room.onMessage("shop:list", (payload: any) => this.showShop(payload));
     this.room.onMessage("shop:result", (payload: any) => this.updateShopResult(payload));
+    
+    // Handle crafting
+    this.room.onMessage("crafting:recipes", (payload: any) => this.showCrafting(payload));
+    this.room.onMessage("crafting:result", (payload: any) => this.updateCraftingResult(payload));
+    this.room.onMessage("crafting:complete", (payload: any) => this.updateCraftingComplete(payload));
     
     // Handle chat
     this.room.onMessage("chat", (msg: ChatMessage) => this.appendChat(msg));
@@ -502,6 +508,10 @@ export class ImprovedGameScene extends Phaser.Scene {
     // Shop
     const keyE = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     keyE.on("down", () => this.tryOpenShop());
+    
+    // Crafting
+    const keyC = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+    keyC.on("down", () => this.tryOpenCrafting());
 
     // Chat
     const enter = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
@@ -702,5 +712,210 @@ export class ImprovedGameScene extends Phaser.Scene {
     const a = ["Bold", "Swift", "Calm", "Brave", "Merry"];
     const b = ["Fox", "Owl", "Pine", "Fawn", "Wolf"];
     return `${a[Math.floor(Math.random() * a.length)]}${b[Math.floor(Math.random() * b.length)]}`;
+  }
+
+  private tryOpenCrafting() {
+    this.room?.send("crafting:recipes");
+  }
+
+  private showCrafting(payload: any) {
+    if (this.craftingEl) return; // Already open
+
+    const root = document.createElement("div");
+    Object.assign(root.style, {
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      width: "500px",
+      maxHeight: "600px",
+      background: "rgba(20, 20, 30, 0.95)",
+      border: "2px solid #444",
+      borderRadius: "8px",
+      padding: "20px",
+      zIndex: 100,
+      overflowY: "auto",
+      fontFamily: "Arial, sans-serif"
+    });
+
+    const title = document.createElement("h2");
+    title.textContent = "🔨 Crafting";
+    Object.assign(title.style, {
+      color: "#ffffff",
+      textAlign: "center",
+      margin: "0 0 15px 0",
+      fontSize: "24px"
+    });
+
+    const inventory = document.createElement("div");
+    inventory.innerHTML = "<h3 style='color: #ffdd44; margin: 10px 0;'>📦 Materials:</h3>";
+    
+    const inventoryGrid = document.createElement("div");
+    Object.assign(inventoryGrid.style, {
+      display: "grid",
+      gridTemplateColumns: "repeat(4, 1fr)",
+      gap: "8px",
+      marginBottom: "20px"
+    });
+
+    // Show inventory materials
+    for (const material of CRAFTING_MATERIALS) {
+      const count = payload.inventory[material.id] || 0;
+      const item = document.createElement("div");
+      Object.assign(item.style, {
+        background: "rgba(40, 40, 50, 0.8)",
+        border: "1px solid #666",
+        borderRadius: "4px",
+        padding: "8px",
+        textAlign: "center",
+        color: count > 0 ? "#ffffff" : "#666666"
+      });
+      item.innerHTML = `${material.icon || "📦"}<br><small>${material.name}</small><br><strong>${count}</strong>`;
+      inventoryGrid.appendChild(item);
+    }
+    
+    inventory.appendChild(inventoryGrid);
+
+    const recipes = document.createElement("div");
+    recipes.innerHTML = "<h3 style='color: #ffdd44; margin: 20px 0 10px 0;'>📋 Recipes:</h3>";
+
+    if (payload.isCrafting) {
+      const craftingStatus = document.createElement("div");
+      Object.assign(craftingStatus.style, {
+        background: "rgba(50, 150, 50, 0.2)",
+        border: "1px solid #5a5",
+        borderRadius: "4px",
+        padding: "10px",
+        marginBottom: "15px",
+        color: "#aaffaa",
+        textAlign: "center"
+      });
+      
+      const currentRecipe = CRAFTING_RECIPES.find(r => r.id === payload.currentRecipe);
+      const progress = Math.round(payload.craftingProgress * 100);
+      
+      craftingStatus.innerHTML = `
+        <div>⚒️ Crafting: ${currentRecipe?.name || "Unknown"}</div>
+        <div style="margin-top: 5px;">Progress: ${progress}%</div>
+        <div style="background: #333; height: 10px; border-radius: 5px; margin-top: 5px;">
+          <div style="background: #5a5; height: 100%; width: ${progress}%; border-radius: 5px; transition: width 0.5s;"></div>
+        </div>
+      `;
+      
+      const cancelBtn = document.createElement("button");
+      cancelBtn.textContent = "Cancel";
+      Object.assign(cancelBtn.style, {
+        background: "#cc4444",
+        color: "white",
+        border: "none",
+        padding: "5px 10px",
+        borderRadius: "4px",
+        marginTop: "10px",
+        cursor: "pointer"
+      });
+      cancelBtn.onclick = () => {
+        this.room?.send("crafting:cancel");
+        this.closeCrafting();
+      };
+      craftingStatus.appendChild(cancelBtn);
+      recipes.appendChild(craftingStatus);
+    }
+
+    for (const recipe of payload.recipes) {
+      const recipeEl = document.createElement("div");
+      Object.assign(recipeEl.style, {
+        background: "rgba(40, 40, 50, 0.8)",
+        border: "1px solid #666",
+        borderRadius: "4px",
+        padding: "12px",
+        marginBottom: "10px"
+      });
+
+      const canCraft = !payload.isCrafting && recipe.materials.every((mat: any) => 
+        (payload.inventory[mat.materialId] || 0) >= mat.quantity
+      );
+
+      recipeEl.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <strong style="color: ${canCraft ? '#ffffff' : '#999999'};">${recipe.icon || "⚒️"} ${recipe.name}</strong>
+            <div style="color: #cccccc; font-size: 12px; margin-top: 4px;">${recipe.description}</div>
+            <div style="color: #aaaaaa; font-size: 11px; margin-top: 4px;">
+              Materials: ${recipe.materials.map((mat: any) => {
+                const materialName = CRAFTING_MATERIALS.find(m => m.id === mat.materialId)?.name || mat.materialId;
+                const available = payload.inventory[mat.materialId] || 0;
+                const hasEnough = available >= mat.quantity;
+                return `<span style="color: ${hasEnough ? '#aaffaa' : '#ffaaaa'}">${materialName} (${mat.quantity})</span>`;
+              }).join(", ")}
+            </div>
+            <div style="color: #888888; font-size: 11px; margin-top: 2px;">
+              Crafting time: ${recipe.craftingTime}s
+            </div>
+          </div>
+          <button ${!canCraft ? 'disabled' : ''} style="
+            background: ${canCraft ? '#44aa44' : '#666666'};
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            borderRadius: 4px;
+            cursor: ${canCraft ? 'pointer' : 'not-allowed'};
+          ">Craft</button>
+        </div>
+      `;
+
+      const button = recipeEl.querySelector("button") as HTMLButtonElement;
+      if (canCraft) {
+        button.onclick = () => {
+          this.room?.send("crafting:start", { recipeId: recipe.id });
+          this.closeCrafting();
+        };
+      }
+
+      recipes.appendChild(recipeEl);
+    }
+
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "✕ Close";
+    Object.assign(closeBtn.style, {
+      background: "#666666",
+      color: "white",
+      border: "none",
+      padding: "10px 20px",
+      borderRadius: "4px",
+      cursor: "pointer",
+      display: "block",
+      margin: "20px auto 0",
+      fontSize: "14px"
+    });
+    closeBtn.onclick = () => this.closeCrafting();
+
+    root.appendChild(title);
+    root.appendChild(inventory);
+    root.appendChild(recipes);
+    root.appendChild(closeBtn);
+    document.body.appendChild(root);
+    
+    this.craftingEl = root;
+  }
+
+  private closeCrafting() {
+    if (this.craftingEl) {
+      this.craftingEl.remove();
+      this.craftingEl = undefined;
+    }
+  }
+
+  private updateCraftingResult(payload: any) {
+    if (payload.success) {
+      this.showToast(payload.message, "success");
+    } else {
+      this.showToast(payload.message, "error");
+    }
+    this.closeCrafting();
+  }
+
+  private updateCraftingComplete(payload: any) {
+    this.showToast(payload.message, "success");
+    this.closeCrafting();
   }
 }
