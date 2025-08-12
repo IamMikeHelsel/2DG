@@ -85,6 +85,7 @@ export const FOUNDER_REWARDS: Record<FounderTier, RewardItem[]> = {
 export interface PlayerRewards {
   founderTier: FounderTier;
   joinTimestamp: number;
+  joinOrder?: number; // Optional join order for founder tracking
   bugReportsSubmitted: number;
   referralsCount: number;
   unlockedRewards: string[]; // reward ids
@@ -107,3 +108,4 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
 export const EARLY_BIRD_LIMIT = 50;
 export const BETA_TEST_PERIOD_DAYS = 14;
 export const BUG_HUNTER_REPORTS_REQUIRED = 5;
+export const SPAWN_DUMMY_PROBABILITY = 0.3; // 30% chance to spawn dummy enemies
