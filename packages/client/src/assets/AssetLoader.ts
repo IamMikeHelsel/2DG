@@ -1,4 +1,5 @@
 import { Scene } from 'phaser';
+import { AudioConfig, AUDIO_ASSETS } from "@toodee/shared";
 
 export interface SpriteConfig {
   key: string;
@@ -33,6 +34,13 @@ export class AssetLoader {
       } else {
         this.scene.load.image(sprite.key, sprite.path);
       }
+    });
+  }
+
+  loadAudio(audioAssets?: AudioConfig[]) {
+    const assets = audioAssets || AUDIO_ASSETS;
+    assets.forEach(audio => {
+      this.scene.load.audio(audio.key, [audio.path]);
     });
   }
 

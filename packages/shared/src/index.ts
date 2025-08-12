@@ -171,3 +171,68 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
 export const EARLY_BIRD_LIMIT = 50;
 export const BETA_TEST_PERIOD_DAYS = 14;
 export const BUG_HUNTER_REPORTS_REQUIRED = 5;
+
+// Audio System Constants
+export enum AudioType {
+  Music = "music",
+  SFX = "sfx", 
+  Ambient = "ambient",
+  UI = "ui"
+}
+
+export interface AudioConfig {
+  key: string;
+  path: string;
+  type: AudioType;
+  volume?: number;
+  loop?: boolean;
+  spatial?: boolean;
+}
+
+export const AUDIO_ASSETS: AudioConfig[] = [
+  // Music
+  { key: "town_theme", path: "/audio/music/town_theme.ogg", type: AudioType.Music, volume: 0.6, loop: true },
+  { key: "dungeon_ambient", path: "/audio/music/dungeon_ambient.ogg", type: AudioType.Music, volume: 0.5, loop: true },
+  { key: "boss_battle", path: "/audio/music/boss_battle.ogg", type: AudioType.Music, volume: 0.7, loop: true },
+  
+  // Ambient
+  { key: "wind", path: "/audio/ambient/wind.ogg", type: AudioType.Ambient, volume: 0.3, loop: true },
+  { key: "torches", path: "/audio/ambient/torches.ogg", type: AudioType.Ambient, volume: 0.4, loop: true, spatial: true },
+  { key: "water", path: "/audio/ambient/water.ogg", type: AudioType.Ambient, volume: 0.5, loop: true, spatial: true },
+  
+  // Combat SFX
+  { key: "sword_swing", path: "/audio/sfx/sword_swing.ogg", type: AudioType.SFX, volume: 0.8 },
+  { key: "hit", path: "/audio/sfx/hit.ogg", type: AudioType.SFX, volume: 0.7 },
+  { key: "death", path: "/audio/sfx/death.ogg", type: AudioType.SFX, volume: 0.6 },
+  
+  // UI sounds
+  { key: "click", path: "/audio/ui/click.ogg", type: AudioType.UI, volume: 0.5 },
+  { key: "hover", path: "/audio/ui/hover.ogg", type: AudioType.UI, volume: 0.3 },
+  { key: "notification", path: "/audio/ui/notification.ogg", type: AudioType.UI, volume: 0.6 },
+  
+  // Footsteps
+  { key: "footstep_grass", path: "/audio/sfx/footstep_grass.ogg", type: AudioType.SFX, volume: 0.4 },
+  { key: "footstep_stone", path: "/audio/sfx/footstep_stone.ogg", type: AudioType.SFX, volume: 0.5 },
+  { key: "footstep_water", path: "/audio/sfx/footstep_water.ogg", type: AudioType.SFX, volume: 0.6 },
+  
+  // Spells/abilities
+  { key: "magic_cast", path: "/audio/sfx/magic_cast.ogg", type: AudioType.SFX, volume: 0.7 },
+  { key: "heal", path: "/audio/sfx/heal.ogg", type: AudioType.SFX, volume: 0.6 },
+  { key: "spell_impact", path: "/audio/sfx/spell_impact.ogg", type: AudioType.SFX, volume: 0.8 }
+];
+
+export interface VolumeSettings {
+  master: number;
+  music: number;
+  sfx: number;
+  ambient: number;
+  ui: number;
+}
+
+export const DEFAULT_VOLUME_SETTINGS: VolumeSettings = {
+  master: 0.7,
+  music: 0.8,
+  sfx: 0.9,
+  ambient: 0.6,
+  ui: 0.7
+};
