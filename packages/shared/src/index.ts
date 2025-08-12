@@ -2,6 +2,51 @@ export const TILE_SIZE = 32;
 export const TICK_RATE = 20; // server ticks per second
 export const MAX_PLAYERS_PER_ROOM = 80;
 
+// XP and Leveling System
+export const MAX_LEVEL = 10;
+export const BASE_XP_REQUIRED = 100;
+export const XP_CURVE_FACTOR = 1.5;
+export const HP_PER_LEVEL = 5;
+export const DAMAGE_PER_LEVEL = 2;
+export const MOB_BASE_XP = 25;
+export const BOSS_XP_MULTIPLIER = 2;
+
+export interface LevelUpResult {
+  newLevel: number;
+  hpGained: number;
+  damageGained: number;
+  nextLevelXP: number;
+}
+
+export function calculateXPRequired(level: number): number {
+  if (level <= 1) return 0;
+  return Math.floor(BASE_XP_REQUIRED * Math.pow(XP_CURVE_FACTOR, level - 2));
+}
+
+export function calculateLevel(totalXP: number): number {
+  let level = 1;
+  let xpRequired = 0;
+  
+  while (level < MAX_LEVEL) {
+    const nextLevelXP = calculateXPRequired(level + 1);
+    if (totalXP < xpRequired + nextLevelXP) break;
+    xpRequired += nextLevelXP;
+    level++;
+  }
+  
+  return level;
+}
+
+export function calculateStatsForLevel(level: number): { hp: number; damage: number } {
+  const baseHP = 100;
+  const baseDamage = 20;
+  
+  return {
+    hp: baseHP + (level - 1) * HP_PER_LEVEL,
+    damage: baseDamage + (level - 1) * DAMAGE_PER_LEVEL
+  };
+}
+
 export type Direction = 'up' | 'down' | 'left' | 'right';
 
 export interface InputMessage {

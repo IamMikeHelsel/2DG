@@ -13,6 +13,11 @@ export class Player extends Schema {
   @type("uint32") gold: number = 0;
   @type("uint16") pots: number = 0; // small potions
   
+  // XP and Leveling System
+  @type("uint8") level: number = 1;
+  @type("uint32") xp: number = 0;
+  @type("uint16") damage: number = 20; // base damage
+  
   // Founder rewards system
   @type("string") founderTier: string = "none";
   @type("uint64") joinTimestamp: number = 0;

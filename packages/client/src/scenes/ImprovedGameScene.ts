@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { createClient } from "../net";
-import { TILE_SIZE, MAP, ChatMessage } from "@toodee/shared";
+import { TILE_SIZE, MAP, ChatMessage, calculateXPRequired } from "@toodee/shared";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
 
 type ServerPlayer = { 
@@ -13,6 +13,9 @@ type ServerPlayer = {
   maxHp: number;
   gold: number;
   pots: number;
+  level: number;
+  xp: number;
+  damage: number;
 };
 
 export class ImprovedGameScene extends Phaser.Scene {
@@ -30,6 +33,10 @@ export class ImprovedGameScene extends Phaser.Scene {
   private chatInputEl?: HTMLInputElement;
   private hpText?: Phaser.GameObjects.Text;
   private goldText?: Phaser.GameObjects.Text;
+  private levelText?: Phaser.GameObjects.Text;
+  private xpText?: Phaser.GameObjects.Text;
+  private xpBarBg?: Phaser.GameObjects.Rectangle;
+  private xpBar?: Phaser.GameObjects.Rectangle;
   private shopEl?: HTMLDivElement;
   private splashImage?: Phaser.GameObjects.Image;
   private toastRoot?: HTMLDivElement;
@@ -134,6 +141,31 @@ export class ImprovedGameScene extends Phaser.Scene {
           strokeThickness: 2
         }).setScrollFactor(0).setDepth(100);
         
+        this.levelText = this.add.text(12, 52, "Level", { 
+          color: "#00ff00", 
+          fontSize: "14px",
+          stroke: '#000000',
+          strokeThickness: 2
+        }).setScrollFactor(0).setDepth(100);
+        
+        this.xpText = this.add.text(12, 72, "XP", { 
+          color: "#00aaff", 
+          fontSize: "14px",
+          stroke: '#000000',
+          strokeThickness: 2
+        }).setScrollFactor(0).setDepth(100);
+        
+        // XP Bar
+        this.xpBarBg = this.add.rectangle(12, 92, 200, 8, 0x333333)
+          .setOrigin(0, 0.5)
+          .setScrollFactor(0)
+          .setDepth(100);
+          
+        this.xpBar = this.add.rectangle(12, 92, 0, 6, 0x00aaff)
+          .setOrigin(0, 0.5)
+          .setScrollFactor(0)
+          .setDepth(101);
+        
         // Add controls hint
         this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat", {
           color: "#aaaaaa",
@@ -199,6 +231,21 @@ export class ImprovedGameScene extends Phaser.Scene {
       if (isLocal) {
         this.hpText?.setText(`HP: ${p.hp}/${p.maxHp}`);
         this.goldText?.setText(`Gold: ${p.gold}`);
+        this.levelText?.setText(`Level: ${p.level}`);
+        
+        // Calculate XP progress for current level
+        const currentLevelXP = this.calculateCurrentLevelXP(p.level, p.xp);
+        const nextLevelXP = calculateXPRequired(p.level + 1);
+        const xpPercent = nextLevelXP > 0 ? currentLevelXP / nextLevelXP : 1;
+        
+        this.xpText?.setText(`XP: ${currentLevelXP}/${nextLevelXP}`);
+        
+        // Update XP bar
+        if (this.xpBar && this.xpBarBg) {
+          const barWidth = 200;
+          this.xpBar.setSize(barWidth * Math.min(xpPercent, 1), 6);
+        }
+        
         this.saveSave(p);
       }
     };
@@ -256,6 +303,10 @@ export class ImprovedGameScene extends Phaser.Scene {
     // Handle shop
     this.room.onMessage("shop:list", (payload: any) => this.showShop(payload));
     this.room.onMessage("shop:result", (payload: any) => this.updateShopResult(payload));
+    
+    // Handle XP and level up
+    this.room.onMessage("xp_gained", (data: { amount: number; isBoss: boolean }) => this.showXPGained(data));
+    this.room.onMessage("level_up", (data: any) => this.showLevelUp(data));
     
     // Handle chat
     this.room.onMessage("chat", (msg: ChatMessage) => this.appendChat(msg));
@@ -681,6 +732,99 @@ export class ImprovedGameScene extends Phaser.Scene {
     setTimeout(() => toast.remove(), 3000);
   }
 
+  private showXPGained(data: { amount: number; isBoss: boolean }) {
+    const message = data.isBoss ? 
+      `+${data.amount} XP (Boss Bonus!)` : 
+      `+${data.amount} XP`;
+    
+    // Create floating XP text near player
+    if (this.cameraTarget) {
+      const xpText = this.add.text(
+        this.cameraTarget.x + (Math.random() - 0.5) * 40, 
+        this.cameraTarget.y - 30, 
+        message, 
+        { 
+          color: data.isBoss ? "#ff9900" : "#00aaff", 
+          fontSize: "16px",
+          stroke: '#000000',
+          strokeThickness: 2
+        }
+      ).setDepth(200);
+      
+      // Animate the text
+      this.tweens.add({
+        targets: xpText,
+        y: xpText.y - 50,
+        alpha: 0,
+        duration: 2000,
+        ease: 'Power2',
+        onComplete: () => xpText.destroy()
+      });
+    }
+    
+    // Also show as toast
+    this.showToast(message);
+  }
+
+  private showLevelUp(data: any) {
+    const message = `LEVEL UP! Level ${data.newLevel}`;
+    const statsMessage = `+${data.hpGained} HP, +${data.damageGained} Damage`;
+    
+    // Create prominent level up text
+    if (this.cameraTarget) {
+      const levelUpText = this.add.text(
+        this.cameraTarget.x, 
+        this.cameraTarget.y - 60, 
+        message, 
+        { 
+          color: "#ffff00", 
+          fontSize: "24px",
+          stroke: '#000000',
+          strokeThickness: 3,
+          fontStyle: 'bold'
+        }
+      ).setOrigin(0.5).setDepth(200);
+      
+      const statsText = this.add.text(
+        this.cameraTarget.x, 
+        this.cameraTarget.y - 35, 
+        statsMessage, 
+        { 
+          color: "#00ff00", 
+          fontSize: "14px",
+          stroke: '#000000',
+          strokeThickness: 2
+        }
+      ).setOrigin(0.5).setDepth(200);
+      
+      // Animate the level up text with scale
+      this.tweens.add({
+        targets: [levelUpText, statsText],
+        y: "-=80",
+        alpha: 0,
+        duration: 3000,
+        ease: 'Power2',
+        onComplete: () => {
+          levelUpText.destroy();
+          statsText.destroy();
+        }
+      });
+      
+      // Scale effect
+      this.tweens.add({
+        targets: levelUpText,
+        scaleX: 1.3,
+        scaleY: 1.3,
+        duration: 500,
+        yoyo: true,
+        ease: 'Back.easeOut'
+      });
+    }
+    
+    // Show toast notification
+    this.showToast(`${message} - ${statsMessage}`);
+  }
+
   private saveSave(player: any) {
     localStorage.setItem("toodee_save", JSON.stringify({
       name: player.name,
@@ -702,5 +846,13 @@ export class ImprovedGameScene extends Phaser.Scene {
     const a = ["Bold", "Swift", "Calm", "Brave", "Merry"];
     const b = ["Fox", "Owl", "Pine", "Fawn", "Wolf"];
     return `${a[Math.floor(Math.random() * a.length)]}${b[Math.floor(Math.random() * b.length)]}`;
+  }
+
+  private calculateCurrentLevelXP(level: number, totalXP: number): number {
+    let xpConsumed = 0;
+    for (let i = 2; i <= level; i++) {
+      xpConsumed += calculateXPRequired(i);
+    }
+    return totalXP - xpConsumed;
   }
 }

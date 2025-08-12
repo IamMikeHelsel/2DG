@@ -1,11 +1,8 @@
 
-import colyseus from "colyseus";
+import { Room, Client } from "colyseus";
 import { WorldState, Player, Mob } from "./state.js";
-import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS } from "@toodee/shared";
+import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS, MOB_BASE_XP, BOSS_XP_MULTIPLIER, calculateLevel, calculateStatsForLevel, calculateXPRequired, type LevelUpResult } from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
-
-const { Room } = colyseus;
-type Client = colyseus.Client;
 
 const SPAWN_DUMMY_PROBABILITY = 0.3;
 
@@ -59,8 +56,14 @@ export class GameRoom extends Room<WorldState> {
     const p = new Player();
     p.id = client.sessionId;
     p.name = options?.name || "Adventurer";
-    p.maxHp = 100;
+    
+    // Initialize XP and leveling system
+    p.level = 1;
+    p.xp = 0;
+    const stats = calculateStatsForLevel(p.level);
+    p.maxHp = stats.hp;
     p.hp = p.maxHp;
+    p.damage = stats.damage;
     p.gold = 20;
     p.pots = 0;
     
@@ -174,12 +177,29 @@ export class GameRoom extends Room<WorldState> {
     this.state.mobs.forEach((m, key) => {
       const mx = Math.round(m.x), my = Math.round(m.y);
       if (mx === front.x && my === front.y && m.hp > 0 && !hitSomething) {
-        m.hp = Math.max(0, m.hp - 30);
+        m.hp = Math.max(0, m.hp - attacker.damage);
         hitSomething = true;
         if (m.hp === 0) {
-          // reward attacker
+          // Determine if this is a boss (higher HP mobs are considered bosses)
+          const isBoss = m.maxHp > 60;
+          const xpGained = isBoss ? MOB_BASE_XP * BOSS_XP_MULTIPLIER : MOB_BASE_XP;
+          
+          // Award XP and check for level up
+          const levelUpResult = this.awardXP(attacker, xpGained);
+          
+          // Existing rewards
           attacker.hp = Math.min(attacker.maxHp, attacker.hp + 10);
           attacker.gold = Math.min(999999, attacker.gold + 10);
+          
+          // Notify client of XP gain and potential level up
+          const client = this.clients.find(c => c.sessionId === playerId);
+          if (client) {
+            client.send("xp_gained", { amount: xpGained, isBoss });
+            if (levelUpResult) {
+              client.send("level_up", levelUpResult);
+            }
+          }
+          
           const id = key;
           setTimeout(() => this.respawnMob(id), 2000);
         }
@@ -193,7 +213,7 @@ export class GameRoom extends Room<WorldState> {
       const tx = Math.round(target.x);
       const ty = Math.round(target.y);
       if (tx === front.x && ty === front.y && target.hp > 0) {
-        target.hp = Math.max(0, target.hp - 25);
+        target.hp = Math.max(0, target.hp - attacker.damage);
         if (target.hp === 0) {
           // respawn at town center after short delay
           const rid = id;
@@ -209,12 +229,48 @@ export class GameRoom extends Room<WorldState> {
     });
   }
 
+  private awardXP(player: Player, xpAmount: number): LevelUpResult | null {
+    const oldLevel = player.level;
+    player.xp += xpAmount;
+    
+    const newLevel = calculateLevel(player.xp);
+    
+    if (newLevel > oldLevel) {
+      // Level up! Update stats
+      const newStats = calculateStatsForLevel(newLevel);
+      const oldStats = calculateStatsForLevel(oldLevel);
+      
+      player.level = newLevel;
+      player.maxHp = newStats.hp;
+      player.damage = newStats.damage;
+      
+      // Heal to full HP on level up
+      player.hp = player.maxHp;
+      
+      const hpGained = newStats.hp - oldStats.hp;
+      const damageGained = newStats.damage - oldStats.damage;
+      const nextLevelXP = calculateXPRequired(newLevel + 1);
+      
+      return {
+        newLevel,
+        hpGained,
+        damageGained,
+        nextLevelXP
+      };
+    }
+    
+    return null;
+  }
+
   private spawnMob(pos: { x: number; y: number }) {
     const m = new Mob();
     m.id = `mob_${Math.random().toString(36).slice(2, 8)}`;
     m.x = pos.x;
     m.y = pos.y;
-    m.maxHp = 60;
+    
+    // 20% chance to spawn a boss mob with higher HP
+    const isBoss = Math.random() < 0.2;
+    m.maxHp = isBoss ? 120 : 60;
     m.hp = m.maxHp;
     this.state.mobs.set(m.id, m);
   }
