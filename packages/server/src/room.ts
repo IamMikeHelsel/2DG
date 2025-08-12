@@ -61,6 +61,36 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
     this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
     this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
+    
+    // Performance monitoring messages
+    this.onMessage("ping", (client, data: { timestamp: number }) => {
+      client.send("pong", { timestamp: data.timestamp });
+    });
+    
+    // Batched message handling
+    this.onMessage("batch", (client, data: { messages: Array<{ type: string; data: any; age: number }> }) => {
+      data.messages.forEach(msg => {
+        // Process each batched message
+        switch (msg.type) {
+          case "input":
+            this.inputs.set(client.sessionId, msg.data);
+            break;
+          case "chat":
+            const p = this.state.players.get(client.sessionId);
+            if (!p) return;
+            const clean = sanitizeChat(msg.data);
+            if (!clean) return;
+            const chatMsg: ChatMessage = { from: p.name || "Adventurer", text: clean, ts: Date.now() };
+            this.broadcast("chat", chatMsg);
+            break;
+          case "attack":
+            this.handleAttack(client.sessionId);
+            break;
+          default:
+            console.warn(`[Batch] Unknown message type: ${msg.type}`);
+        }
+      });
+    });
 
     this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
   }
