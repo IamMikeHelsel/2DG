@@ -1,7 +1,30 @@
 
 import colyseus from "colyseus";
-import { WorldState, Player, Mob } from "./state.js";
-import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
+import { WorldState, Player, Mob, InventoryItem, InventorySlot, DroppedItem } from "./state.js";
+import { 
+  TICK_RATE, 
+  MAP, 
+  type ChatMessage, 
+  NPC_MERCHANT, 
+  SHOP_ITEMS, 
+  FounderTier,
+  FOUNDER_REWARDS,
+  EARLY_BIRD_LIMIT,
+  BETA_TEST_PERIOD_DAYS,
+  BUG_HUNTER_REPORTS_REQUIRED,
+  REFERRAL_REWARDS,
+  ANNIVERSARY_REWARDS,
+  SPAWN_DUMMY_PROBABILITY,
+  INVENTORY_SIZE,
+  BASE_ITEMS,
+  LOOT_TABLES,
+  type InventoryMoveMessage,
+  type EquipItemMessage,
+  type PickupItemMessage,
+  type UseItemMessage,
+  ItemType,
+  EquipSlot
+} from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
 
 const { Room } = colyseus;
@@ -16,8 +39,14 @@ export class GameRoom extends Room<WorldState> {
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
-
   
+  // Founder system properties
+  private joinCounter = 0;
+  private founderTracker = new Map<string, any>();
+  
+  // Inventory system
+  private itemInstanceCounter = 0;
+
   // Performance monitoring
   private tickTimes: number[] = [];
   private lastPerformanceLog = 0;
@@ -48,6 +77,12 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
     this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
     this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
+    
+    // Inventory system messages
+    this.onMessage("inventory:move", (client, data: InventoryMoveMessage) => this.handleInventoryMove(client.sessionId, data));
+    this.onMessage("inventory:equip", (client, data: EquipItemMessage) => this.handleEquipItem(client.sessionId, data));
+    this.onMessage("inventory:pickup", (client, data: PickupItemMessage) => this.handlePickupItem(client.sessionId, data));
+    this.onMessage("inventory:use", (client, data: UseItemMessage) => this.handleUseItem(client.sessionId, data));
 
     this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
   }
@@ -60,6 +95,9 @@ export class GameRoom extends Room<WorldState> {
     p.hp = p.maxHp;
     p.gold = 20;
     p.pots = 0;
+    
+    // Initialize inventory system
+    this.initializePlayerInventory(p);
     
     // Initialize founder rewards tracking
     p.joinTimestamp = Date.now();
@@ -170,6 +208,11 @@ export class GameRoom extends Room<WorldState> {
       p.lastSeq = inp.seq >>> 0;
     });
     
+    // Cleanup dropped items periodically (every 60 ticks = ~3 seconds)
+    if (Date.now() % 60000 < 50) { // Check approximately every minute
+      this.cleanupDroppedItems();
+    }
+    
     // Performance monitoring
     const tickEnd = performance.now();
     const tickTime = tickEnd - tickStart;
@@ -211,6 +254,10 @@ export class GameRoom extends Room<WorldState> {
           // reward attacker
           attacker.hp = Math.min(attacker.maxHp, attacker.hp + 10);
           attacker.gold = Math.min(999999, attacker.gold + 10);
+          
+          // Drop loot
+          this.dropLoot(key, m.x, m.y);
+          
           const id = key;
           setTimeout(() => this.respawnMob(id), 2000);
         }
@@ -443,6 +490,237 @@ export class GameRoom extends Room<WorldState> {
         message: `Anniversary reward unlocked: ${reward.name}!`
       });
     }
+  }
+
+  // Inventory System Methods
+  
+  private initializePlayerInventory(player: Player) {
+    // Initialize empty inventory grid
+    for (let y = 0; y < INVENTORY_SIZE.height; y++) {
+      for (let x = 0; x < INVENTORY_SIZE.width; x++) {
+        const slot = new InventorySlot();
+        slot.x = x;
+        slot.y = y;
+        slot.item = undefined;
+        player.inventory.push(slot);
+      }
+    }
+    
+    // Give starting items
+    this.addItemToInventory(player, "rusty_sword", 1);
+    this.addItemToInventory(player, "health_potion", 3);
+    this.addItemToInventory(player, "wood", 5);
+  }
+
+  private generateItemId(): string {
+    return `item_${Date.now()}_${++this.itemInstanceCounter}`;
+  }
+
+  private addItemToInventory(player: Player, itemId: string, quantity: number): boolean {
+    const baseItem = BASE_ITEMS[itemId];
+    if (!baseItem) return false;
+
+    // Try to stack with existing items first
+    if (baseItem.maxStack > 1) {
+      for (const slot of player.inventory) {
+        if (slot.item && slot.item.itemId === itemId) {
+          const canStack = Math.min(quantity, baseItem.maxStack - slot.item.quantity);
+          if (canStack > 0) {
+            slot.item.quantity += canStack;
+            quantity -= canStack;
+            if (quantity <= 0) return true;
+          }
+        }
+      }
+    }
+
+    // Find empty slots for remaining quantity
+    while (quantity > 0) {
+      const emptySlot = player.inventory.find(slot => !slot.item);
+      if (!emptySlot) return false; // Inventory full
+
+      const item = new InventoryItem();
+      item.itemId = itemId;
+      item.quantity = Math.min(quantity, baseItem.maxStack);
+      item.durability = 100;
+      
+      emptySlot.item = item;
+      quantity -= item.quantity;
+    }
+
+    return true;
+  }
+
+  private getInventorySlot(player: Player, x: number, y: number): InventorySlot | null {
+    return player.inventory.find(slot => slot.x === x && slot.y === y) || null;
+  }
+
+  private handleInventoryMove(playerId: string, data: InventoryMoveMessage) {
+    const player = this.state.players.get(playerId);
+    if (!player) return;
+
+    const fromSlot = this.getInventorySlot(player, data.fromX, data.fromY);
+    const toSlot = this.getInventorySlot(player, data.toX, data.toY);
+    
+    if (!fromSlot || !toSlot || !fromSlot.item) return;
+
+    const fromItem = fromSlot.item;
+    const toItem = toSlot.item;
+
+    // Handle different move scenarios
+    if (!toItem) {
+      // Simple move to empty slot
+      toSlot.item = fromItem;
+      fromSlot.item = undefined;
+    } else if (toItem.itemId === fromItem.itemId) {
+      // Stack items of same type
+      const baseItem = BASE_ITEMS[fromItem.itemId];
+      if (baseItem && baseItem.maxStack > 1) {
+        const canStack = Math.min(fromItem.quantity, baseItem.maxStack - toItem.quantity);
+        toItem.quantity += canStack;
+        fromItem.quantity -= canStack;
+        
+        if (fromItem.quantity <= 0) {
+          fromSlot.item = undefined;
+        }
+      }
+    } else {
+      // Swap items
+      toSlot.item = fromItem;
+      fromSlot.item = toItem;
+    }
+  }
+
+  private handleEquipItem(playerId: string, data: EquipItemMessage) {
+    const player = this.state.players.get(playerId);
+    if (!player) return;
+
+    const slot = this.getInventorySlot(player, data.inventoryX, data.inventoryY);
+    if (!slot || !slot.item) return;
+
+    const baseItem = BASE_ITEMS[slot.item.itemId];
+    if (!baseItem || baseItem.equipSlot !== data.equipSlot) return;
+
+    // Get current equipped item
+    let currentEquipped: InventoryItem | undefined;
+    if (data.equipSlot === EquipSlot.Weapon) {
+      currentEquipped = player.equipment.weapon;
+      player.equipment.weapon = slot.item;
+    } else if (data.equipSlot === EquipSlot.Armor) {
+      currentEquipped = player.equipment.armor;
+      player.equipment.armor = slot.item;
+    } else if (data.equipSlot === EquipSlot.Accessory) {
+      currentEquipped = player.equipment.accessory;
+      player.equipment.accessory = slot.item;
+    }
+
+    // Put old equipped item back in inventory
+    if (currentEquipped) {
+      slot.item = currentEquipped;
+    } else {
+      slot.item = undefined;
+    }
+
+    // Update player stats based on equipment
+    this.updatePlayerStats(player);
+  }
+
+  private handlePickupItem(playerId: string, data: PickupItemMessage) {
+    const player = this.state.players.get(playerId);
+    const droppedItem = this.state.droppedItems.get(data.itemInstanceId);
+    
+    if (!player || !droppedItem) return;
+
+    // Check if player is close enough to pick up
+    const distance = Math.sqrt(
+      Math.pow(player.x - droppedItem.x, 2) + 
+      Math.pow(player.y - droppedItem.y, 2)
+    );
+    
+    if (distance > 2) return; // Must be within 2 tiles
+
+    // Try to add to inventory
+    if (this.addItemToInventory(player, droppedItem.itemId, droppedItem.quantity)) {
+      this.state.droppedItems.delete(data.itemInstanceId);
+    }
+  }
+
+  private handleUseItem(playerId: string, data: UseItemMessage) {
+    const player = this.state.players.get(playerId);
+    if (!player) return;
+
+    const slot = this.getInventorySlot(player, data.inventoryX, data.inventoryY);
+    if (!slot || !slot.item) return;
+
+    const baseItem = BASE_ITEMS[slot.item.itemId];
+    if (!baseItem || baseItem.type !== ItemType.Consumable) return;
+
+    // Apply item effects
+    if (baseItem.stats?.health) {
+      player.hp = Math.min(player.maxHp, player.hp + baseItem.stats.health);
+    }
+
+    // Consume item
+    slot.item.quantity--;
+    if (slot.item.quantity <= 0) {
+      slot.item = undefined;
+    }
+  }
+
+  private updatePlayerStats(player: Player) {
+    // Reset to base stats
+    let totalDamage = 0;
+    let totalDefense = 0;
+    let totalSpeed = 0;
+
+    // Add equipment bonuses
+    [player.equipment.weapon, player.equipment.armor, player.equipment.accessory].forEach(item => {
+      if (item) {
+        const baseItem = BASE_ITEMS[item.itemId];
+        if (baseItem?.stats) {
+          totalDamage += baseItem.stats.damage || 0;
+          totalDefense += baseItem.stats.defense || 0;
+          totalSpeed += baseItem.stats.speed || 0;
+        }
+      }
+    });
+
+    // Apply stats (stored in player for future use)
+    // For now we don't have damage/defense/speed fields in Player schema
+    // This would need to be added when implementing combat system
+  }
+
+  private dropLoot(mobId: string, mobX: number, mobY: number) {
+    // Determine loot table based on mob type (for now use basic_mob)
+    const lootTable = LOOT_TABLES.basic_mob;
+    
+    lootTable.forEach(lootEntry => {
+      if (Math.random() < lootEntry.chance) {
+        const quantity = Math.floor(Math.random() * (lootEntry.maxQuantity - lootEntry.minQuantity + 1)) + lootEntry.minQuantity;
+        
+        const droppedItem = new DroppedItem();
+        droppedItem.id = this.generateItemId();
+        droppedItem.itemId = lootEntry.itemId;
+        droppedItem.x = mobX + (Math.random() * 2 - 1); // Random position near mob
+        droppedItem.y = mobY + (Math.random() * 2 - 1);
+        droppedItem.quantity = quantity;
+        droppedItem.spawnTime = Date.now();
+        
+        this.state.droppedItems.set(droppedItem.id, droppedItem);
+      }
+    });
+  }
+
+  // Cleanup dropped items after 5 minutes
+  private cleanupDroppedItems() {
+    const now = Date.now();
+    const maxAge = 5 * 60 * 1000; // 5 minutes
+    
+    this.state.droppedItems.forEach((item, id) => {
+      if (now - item.spawnTime > maxAge) {
+        this.state.droppedItems.delete(id);
+      }
+    });
   }
 }
 

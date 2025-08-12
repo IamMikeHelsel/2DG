@@ -171,3 +171,232 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
 export const EARLY_BIRD_LIMIT = 50;
 export const BETA_TEST_PERIOD_DAYS = 14;
 export const BUG_HUNTER_REPORTS_REQUIRED = 5;
+export const SPAWN_DUMMY_PROBABILITY = 0.3;
+
+// Inventory System
+export const INVENTORY_SIZE = {
+  width: 5,
+  height: 8,
+  total: 40
+};
+
+export enum ItemType {
+  Weapon = "weapon",
+  Armor = "armor", 
+  Consumable = "consumable",
+  Material = "material",
+  Quest = "quest"
+}
+
+export enum ItemRarity {
+  Common = "common",
+  Uncommon = "uncommon", 
+  Rare = "rare",
+  Epic = "epic",
+  Legendary = "legendary"
+}
+
+export enum EquipSlot {
+  Weapon = "weapon",
+  Armor = "armor",
+  Accessory = "accessory"
+}
+
+export interface ItemStats {
+  damage?: number;
+  defense?: number;
+  health?: number;
+  speed?: number;
+}
+
+export interface BaseItem {
+  id: string;
+  name: string;
+  description: string;
+  type: ItemType;
+  rarity: ItemRarity;
+  icon: string;
+  maxStack: number;
+  stats?: ItemStats;
+  equipSlot?: EquipSlot;
+  value: number; // gold value
+}
+
+export interface InventoryItem {
+  itemId: string; // references BaseItem.id
+  quantity: number;
+  durability?: number; // for equipment
+}
+
+export interface InventorySlot {
+  x: number;
+  y: number;
+  item: InventoryItem | null;
+}
+
+export interface Equipment {
+  weapon: InventoryItem | null;
+  armor: InventoryItem | null;
+  accessory: InventoryItem | null;
+}
+
+// Network messages for inventory operations
+export interface InventoryMoveMessage {
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  quantity?: number; // for splitting stacks
+}
+
+export interface EquipItemMessage {
+  inventoryX: number;
+  inventoryY: number;
+  equipSlot: EquipSlot;
+}
+
+export interface PickupItemMessage {
+  itemInstanceId: string; // server-side item instance
+}
+
+export interface UseItemMessage {
+  inventoryX: number;
+  inventoryY: number;
+}
+
+// Item definitions
+export const BASE_ITEMS: Record<string, BaseItem> = {
+  // Weapons
+  "rusty_sword": {
+    id: "rusty_sword",
+    name: "Rusty Sword",
+    description: "An old, weathered sword. Still sharp enough to cut.",
+    type: ItemType.Weapon,
+    rarity: ItemRarity.Common,
+    icon: "⚔️",
+    maxStack: 1,
+    stats: { damage: 5 },
+    equipSlot: EquipSlot.Weapon,
+    value: 10
+  },
+  "iron_sword": {
+    id: "iron_sword", 
+    name: "Iron Sword",
+    description: "A well-crafted iron blade.",
+    type: ItemType.Weapon,
+    rarity: ItemRarity.Uncommon,
+    icon: "🗡️",
+    maxStack: 1,
+    stats: { damage: 10 },
+    equipSlot: EquipSlot.Weapon,
+    value: 50
+  },
+  
+  // Armor
+  "leather_vest": {
+    id: "leather_vest",
+    name: "Leather Vest", 
+    description: "Simple leather protection.",
+    type: ItemType.Armor,
+    rarity: ItemRarity.Common,
+    icon: "🦺",
+    maxStack: 1,
+    stats: { defense: 3 },
+    equipSlot: EquipSlot.Armor,
+    value: 15
+  },
+  "iron_armor": {
+    id: "iron_armor",
+    name: "Iron Armor",
+    description: "Sturdy metal protection.",
+    type: ItemType.Armor,
+    rarity: ItemRarity.Uncommon, 
+    icon: "🛡️",
+    maxStack: 1,
+    stats: { defense: 8 },
+    equipSlot: EquipSlot.Armor,
+    value: 75
+  },
+  
+  // Consumables
+  "health_potion": {
+    id: "health_potion",
+    name: "Health Potion",
+    description: "Restores 25 health points.",
+    type: ItemType.Consumable,
+    rarity: ItemRarity.Common,
+    icon: "🧪",
+    maxStack: 10,
+    stats: { health: 25 },
+    value: 5
+  },
+  "large_health_potion": {
+    id: "large_health_potion",
+    name: "Large Health Potion", 
+    description: "Restores 50 health points.",
+    type: ItemType.Consumable,
+    rarity: ItemRarity.Uncommon,
+    icon: "🫙",
+    maxStack: 5,
+    stats: { health: 50 },
+    value: 15
+  },
+  
+  // Materials  
+  "iron_ore": {
+    id: "iron_ore",
+    name: "Iron Ore",
+    description: "Raw iron ready for smelting.",
+    type: ItemType.Material,
+    rarity: ItemRarity.Common,
+    icon: "🪨",
+    maxStack: 50,
+    value: 2
+  },
+  "wood": {
+    id: "wood",
+    name: "Wood",
+    description: "Sturdy wood for crafting.",
+    type: ItemType.Material,
+    rarity: ItemRarity.Common,
+    icon: "🪵",
+    maxStack: 50,
+    value: 1
+  },
+  
+  // Accessories
+  "speed_ring": {
+    id: "speed_ring", 
+    name: "Ring of Speed",
+    description: "Increases movement speed.",
+    type: ItemType.Weapon, // accessories use weapon type for now
+    rarity: ItemRarity.Rare,
+    icon: "💍",
+    maxStack: 1,
+    stats: { speed: 2 },
+    equipSlot: EquipSlot.Accessory,
+    value: 100
+  }
+};
+
+// Loot tables for different mob types
+export interface LootEntry {
+  itemId: string;
+  chance: number; // 0-1
+  minQuantity: number;
+  maxQuantity: number;
+}
+
+export const LOOT_TABLES: Record<string, LootEntry[]> = {
+  "basic_mob": [
+    { itemId: "health_potion", chance: 0.3, minQuantity: 1, maxQuantity: 2 },
+    { itemId: "wood", chance: 0.2, minQuantity: 1, maxQuantity: 3 },
+    { itemId: "iron_ore", chance: 0.1, minQuantity: 1, maxQuantity: 2 }
+  ],
+  "elite_mob": [
+    { itemId: "iron_sword", chance: 0.1, minQuantity: 1, maxQuantity: 1 },
+    { itemId: "iron_armor", chance: 0.08, minQuantity: 1, maxQuantity: 1 },
+    { itemId: "large_health_potion", chance: 0.4, minQuantity: 1, maxQuantity: 3 },
+    { itemId: "speed_ring", chance: 0.05, minQuantity: 1, maxQuantity: 1 }
+  ]
+};
