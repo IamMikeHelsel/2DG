@@ -10,6 +10,8 @@
     "dev:all": "concurrently -k -n server,client -c cyan,magenta \"pnpm -F @toodee/server dev\" \"VITE_SERVER_URL=ws://localhost:2567 pnpm -F @toodee/client dev\"",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
+    "test:e2e": "pnpm -F @toodee/server test:e2e",
+    "test:unit": "pnpm -r test:unit",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
