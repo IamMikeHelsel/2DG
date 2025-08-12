@@ -1,12 +1,22 @@
 
-import colyseus from "colyseus";
-import { WorldState, Player, Mob } from "./state.js";
-import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
+import { Room, Client } from "colyseus";
+import { WorldState, Player, Mob, Party } from "./state.js";
+import { 
+  TICK_RATE, 
+  MAP, 
+  type ChatMessage, 
+  NPC_MERCHANT, 
+  SHOP_ITEMS, 
+  MAX_PARTY_SIZE,
+  FounderTier,
+  FOUNDER_REWARDS,
+  EARLY_BIRD_LIMIT,
+  BETA_TEST_PERIOD_DAYS,
+  BUG_HUNTER_REPORTS_REQUIRED,
+  REFERRAL_REWARDS,
+  ANNIVERSARY_REWARDS
+} from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
-
-const { Room } = colyseus;
-type Client = colyseus.Client;
-
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
 
@@ -17,6 +27,9 @@ export class GameRoom extends Room<WorldState> {
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
 
+  // Founder system tracking
+  private joinCounter = 0;
+  private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
   
   // Performance monitoring
   private tickTimes: number[] = [];
@@ -48,6 +61,12 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
     this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
     this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
+    
+    // Party system messages
+    this.onMessage("party:create", (client) => this.handlePartyCreate(client.sessionId));
+    this.onMessage("party:invite", (client, data: { targetPlayerId: string }) => this.handlePartyInvite(client.sessionId, data));
+    this.onMessage("party:join", (client, data: { partyId: string }) => this.handlePartyJoin(client.sessionId, data));
+    this.onMessage("party:leave", (client) => this.handlePartyLeave(client.sessionId));
 
     this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
   }
@@ -95,8 +114,16 @@ export class GameRoom extends Room<WorldState> {
   }
 
   onLeave(client: Client, consented: boolean) {
-    this.state.players.delete(client.sessionId);
-    this.inputs.delete(client.sessionId);
+    const playerId = client.sessionId;
+    const player = this.state.players.get(playerId);
+    
+    // Handle party cleanup if player was in a party
+    if (player?.partyId) {
+      this.handlePartyLeave(playerId);
+    }
+    
+    this.state.players.delete(playerId);
+    this.inputs.delete(playerId);
   }
 
   update(dt: number) {
@@ -259,7 +286,8 @@ export class GameRoom extends Room<WorldState> {
     this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
     
     // Spawn a training dummy near town when someone buys potions
-    if (Math.random() < SPAWN_DUMMY_PROBABILITY) { // 30% chance
+    const SPAWN_DUMMY_PROBABILITY = 0.3; // 30% chance
+    if (Math.random() < SPAWN_DUMMY_PROBABILITY) {
       this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
     }
   }
@@ -409,6 +437,230 @@ export class GameRoom extends Room<WorldState> {
         message: `Anniversary reward unlocked: ${reward.name}!`
       });
     }
+  }
+
+  // Party System Methods
+  private handlePartyCreate(playerId: string) {
+    const player = this.state.players.get(playerId);
+    if (!player) return;
+
+    // Check if player is already in a party
+    if (player.partyId) {
+      this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+        ok: false,
+        reason: "Already in a party"
+      });
+      return;
+    }
+
+    // Create new party
+    const partyId = `party_${Math.random().toString(36).slice(2, 10)}`;
+    const party = new Party();
+    party.id = partyId;
+    party.leaderId = playerId;
+    party.createdAt = Date.now();
+    party.memberIds.push(playerId);
+
+    this.state.parties.set(partyId, party);
+
+    // Update player
+    player.partyId = partyId;
+    player.isPartyLeader = true;
+
+    this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+      ok: true,
+      action: "create",
+      partyId: partyId
+    });
+
+    console.log(`[Party] Player ${player.name} created party ${partyId}`);
+  }
+
+  private handlePartyInvite(playerId: string, data: { targetPlayerId: string }) {
+    const player = this.state.players.get(playerId);
+    const targetPlayer = this.state.players.get(data.targetPlayerId);
+    
+    if (!player || !targetPlayer) {
+      this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+        ok: false,
+        reason: "Player not found"
+      });
+      return;
+    }
+
+    // Check if inviter is in a party
+    if (!player.partyId) {
+      this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+        ok: false,
+        reason: "Not in a party"
+      });
+      return;
+    }
+
+    const party = this.state.parties.get(player.partyId);
+    if (!party) {
+      this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+        ok: false,
+        reason: "Party not found"
+      });
+      return;
+    }
+
+    // Check if inviter is party leader
+    if (party.leaderId !== playerId) {
+      this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+        ok: false,
+        reason: "Only party leader can invite"
+      });
+      return;
+    }
+
+    // Check if target is already in a party
+    if (targetPlayer.partyId) {
+      this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+        ok: false,
+        reason: "Target player already in a party"
+      });
+      return;
+    }
+
+    // Check party size limit
+    if (party.memberIds.length >= MAX_PARTY_SIZE) {
+      this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+        ok: false,
+        reason: "Party is full"
+      });
+      return;
+    }
+
+    // Send invitation to target player
+    this.clients.find(c => c.sessionId === data.targetPlayerId)?.send("party:invite", {
+      from: player.name,
+      fromId: playerId,
+      partyId: party.id
+    });
+
+    this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+      ok: true,
+      action: "invite",
+      message: `Invitation sent to ${targetPlayer.name}`
+    });
+
+    console.log(`[Party] ${player.name} invited ${targetPlayer.name} to party ${party.id}`);
+  }
+
+  private handlePartyJoin(playerId: string, data: { partyId: string }) {
+    const player = this.state.players.get(playerId);
+    if (!player) return;
+
+    // Check if player is already in a party
+    if (player.partyId) {
+      this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+        ok: false,
+        reason: "Already in a party"
+      });
+      return;
+    }
+
+    const party = this.state.parties.get(data.partyId);
+    if (!party) {
+      this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+        ok: false,
+        reason: "Party not found"
+      });
+      return;
+    }
+
+    // Check party size limit
+    if (party.memberIds.length >= MAX_PARTY_SIZE) {
+      this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+        ok: false,
+        reason: "Party is full"
+      });
+      return;
+    }
+
+    // Add player to party
+    party.memberIds.push(playerId);
+    player.partyId = data.partyId;
+    player.isPartyLeader = false;
+
+    // Notify all party members
+    party.memberIds.forEach(memberId => {
+      this.clients.find(c => c.sessionId === memberId)?.send("party:update", {
+        action: "join",
+        playerName: player.name,
+        playerId: playerId
+      });
+    });
+
+    this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+      ok: true,
+      action: "join",
+      partyId: data.partyId
+    });
+
+    console.log(`[Party] ${player.name} joined party ${data.partyId}`);
+  }
+
+  private handlePartyLeave(playerId: string) {
+    const player = this.state.players.get(playerId);
+    if (!player || !player.partyId) {
+      this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+        ok: false,
+        reason: "Not in a party"
+      });
+      return;
+    }
+
+    const party = this.state.parties.get(player.partyId);
+    if (!party) return;
+
+    const wasLeader = player.isPartyLeader;
+    const playerName = player.name;
+
+    // Remove player from party
+    const memberIndex = party.memberIds.indexOf(playerId);
+    if (memberIndex > -1) {
+      party.memberIds.splice(memberIndex, 1);
+    }
+
+    player.partyId = "";
+    player.isPartyLeader = false;
+
+    // If party leader left or party is empty, disband party
+    if (wasLeader || party.memberIds.length === 0) {
+      // Notify remaining members about disbanding
+      party.memberIds.forEach(memberId => {
+        const member = this.state.players.get(memberId);
+        if (member) {
+          member.partyId = "";
+          member.isPartyLeader = false;
+          this.clients.find(c => c.sessionId === memberId)?.send("party:update", {
+            action: "disband",
+            reason: wasLeader ? "Leader left" : "Party empty"
+          });
+        }
+      });
+
+      this.state.parties.delete(player.partyId);
+      console.log(`[Party] Party ${party.id} disbanded - ${wasLeader ? 'leader left' : 'empty'}`);
+    } else {
+      // Notify remaining members about player leaving
+      party.memberIds.forEach(memberId => {
+        this.clients.find(c => c.sessionId === memberId)?.send("party:update", {
+          action: "leave",
+          playerName: playerName,
+          playerId: playerId
+        });
+      });
+      console.log(`[Party] ${playerName} left party ${party.id}`);
+    }
+
+    this.clients.find(c => c.sessionId === playerId)?.send("party:result", {
+      ok: true,
+      action: "leave"
+    });
   }
 }
 

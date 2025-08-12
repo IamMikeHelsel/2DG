@@ -107,3 +107,22 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
 export const EARLY_BIRD_LIMIT = 50;
 export const BETA_TEST_PERIOD_DAYS = 14;
 export const BUG_HUNTER_REPORTS_REQUIRED = 5;
+
+// Party System
+export const MAX_PARTY_SIZE = 5;
+
+export interface PartyInviteMessage {
+  targetPlayerId: string;
+}
+
+export interface PartyJoinMessage {
+  partyId: string;
+}
+
+export interface PartyLeaveMessage {
+  // No additional data needed
+}
+
+export interface PartyCreateMessage {
+  // No additional data needed
+}

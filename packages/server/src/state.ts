@@ -1,5 +1,12 @@
 import { Schema, type, MapSchema, ArraySchema } from "@colyseus/schema";
 
+export class Party extends Schema {
+  @type("string") id: string = "";
+  @type("string") leaderId: string = "";
+  @type(["string"]) memberIds = new ArraySchema<string>();
+  @type("uint64") createdAt: number = 0;
+}
+
 export class Player extends Schema {
   @type("string") id: string = "";
   @type("string") name: string = "";
@@ -12,6 +19,10 @@ export class Player extends Schema {
   @type("uint16") maxHp: number = 0;
   @type("uint32") gold: number = 0;
   @type("uint16") pots: number = 0; // small potions
+  
+  // Party system
+  @type("string") partyId: string = "";
+  @type("boolean") isPartyLeader: boolean = false;
   
   // Founder rewards system
   @type("string") founderTier: string = "none";
@@ -41,4 +52,5 @@ export class Mob extends Schema {
 
 export class WorldState extends GameState {
   @type({ map: Mob }) mobs = new MapSchema<Mob>();
+  @type({ map: Party }) parties = new MapSchema<Party>();
 }

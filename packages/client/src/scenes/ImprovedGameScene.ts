@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { createClient } from "../net";
 import { TILE_SIZE, MAP, ChatMessage } from "@toodee/shared";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
+import { PartyUI } from "../ui/PartyUI";
 
 type ServerPlayer = { 
   id: string; 
@@ -13,6 +14,8 @@ type ServerPlayer = {
   maxHp: number;
   gold: number;
   pots: number;
+  partyId: string;
+  isPartyLeader: boolean;
 };
 
 export class ImprovedGameScene extends Phaser.Scene {
@@ -34,6 +37,7 @@ export class ImprovedGameScene extends Phaser.Scene {
   private splashImage?: Phaser.GameObjects.Image;
   private toastRoot?: HTMLDivElement;
   private terrainMap: number[][] = [];
+  private partyUI!: PartyUI;
 
   constructor() { 
     super("improved-game"); 
@@ -135,7 +139,15 @@ export class ImprovedGameScene extends Phaser.Scene {
         }).setScrollFactor(0).setDepth(100);
         
         // Add controls hint
-        this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat", {
+        this.add.text(12, this.scale.height - 60, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat", {
+          color: "#aaaaaa",
+          fontSize: "12px",
+          stroke: '#000000',
+          strokeThickness: 1
+        }).setScrollFactor(0).setDepth(100);
+
+        // Add party controls hint
+        this.add.text(12, this.scale.height - 40, "Party: P to toggle party UI | I to invite player", {
           color: "#aaaaaa",
           fontSize: "12px",
           stroke: '#000000',
@@ -200,6 +212,9 @@ export class ImprovedGameScene extends Phaser.Scene {
         this.hpText?.setText(`HP: ${p.hp}/${p.maxHp}`);
         this.goldText?.setText(`Gold: ${p.gold}`);
         this.saveSave(p);
+        
+        // Update party UI if party membership changed
+        this.updatePartyUI();
       }
     };
 
@@ -252,6 +267,7 @@ export class ImprovedGameScene extends Phaser.Scene {
     this.setupInput();
     this.setupChat();
     this.setupToasts();
+    this.setupPartyUI();
     
     // Handle shop
     this.room.onMessage("shop:list", (payload: any) => this.showShop(payload));
@@ -259,6 +275,9 @@ export class ImprovedGameScene extends Phaser.Scene {
     
     // Handle chat
     this.room.onMessage("chat", (msg: ChatMessage) => this.appendChat(msg));
+
+    // Handle party messages
+    this.setupPartyHandlers();
 
     // Fade splash
     if (this.splashImage) {
@@ -506,6 +525,18 @@ export class ImprovedGameScene extends Phaser.Scene {
     // Chat
     const enter = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     enter.on("down", () => this.toggleChat());
+
+    // Party UI toggle
+    const keyP = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+    keyP.on("down", () => this.partyUI.toggle());
+
+    // Invite player (I key)
+    const keyI = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.I);
+    keyI.on("down", () => {
+      if (this.getCurrentPlayer()?.partyId) {
+        this.partyUI.showInviteDialog();
+      }
+    });
   }
 
   private tryOpenShop() {
@@ -687,6 +718,116 @@ export class ImprovedGameScene extends Phaser.Scene {
       x: player.x,
       y: player.y
     }));
+  }
+
+  private setupPartyUI() {
+    this.partyUI = new PartyUI(this);
+    this.partyUI.setPartyActionHandler((action: string, data?: any) => {
+      switch (action) {
+        case 'create':
+          this.room?.send("party:create");
+          break;
+        case 'leave':
+          this.room?.send("party:leave");
+          break;
+        case 'join':
+          if (data?.partyId) {
+            this.room?.send("party:join", { partyId: data.partyId });
+          }
+          break;
+        case 'invite':
+          if (data?.targetName) {
+            // Find player by name
+            const targetPlayer = Array.from(this.room?.state.players.values() || [])
+              .find((p: ServerPlayer) => p.name === data.targetName);
+            if (targetPlayer) {
+              this.room?.send("party:invite", { targetPlayerId: targetPlayer.id });
+            } else {
+              this.showToast(`Player '${data.targetName}' not found`, "error");
+            }
+          }
+          break;
+      }
+    });
+  }
+
+  private setupPartyHandlers() {
+    // Party invitation received
+    this.room?.onMessage("party:invite", (data: any) => {
+      this.partyUI.handleInvitation(data.from, data.fromId, data.partyId);
+    });
+
+    // Party action results
+    this.room?.onMessage("party:result", (data: any) => {
+      if (data.ok) {
+        switch (data.action) {
+          case 'create':
+            this.showToast("Party created!", "ok");
+            this.updatePartyUI();
+            break;
+          case 'join':
+            this.showToast("Joined party!", "ok");
+            this.updatePartyUI();
+            break;
+          case 'leave':
+            this.showToast("Left party", "ok");
+            this.partyUI.clearParty();
+            break;
+        }
+        if (data.message) {
+          this.showToast(data.message, "ok");
+        }
+      } else {
+        this.showToast(data.reason || "Party action failed", "error");
+      }
+    });
+
+    // Party updates (member join/leave/disband)
+    this.room?.onMessage("party:update", (data: any) => {
+      switch (data.action) {
+        case 'join':
+          this.showToast(`${data.playerName} joined the party`, "ok");
+          this.updatePartyUI();
+          break;
+        case 'leave':
+          this.showToast(`${data.playerName} left the party`, "ok");
+          this.updatePartyUI();
+          break;
+        case 'disband':
+          this.showToast(`Party disbanded: ${data.reason}`, "error");
+          this.partyUI.clearParty();
+          break;
+      }
+    });
+  }
+
+  private getCurrentPlayer(): ServerPlayer | null {
+    if (!this.room?.sessionId) return null;
+    return this.room.state.players.get(this.room.sessionId) || null;
+  }
+
+  private updatePartyUI() {
+    const currentPlayer = this.getCurrentPlayer();
+    if (!currentPlayer?.partyId) {
+      this.partyUI.clearParty();
+      return;
+    }
+
+    // Find all party members
+    const partyMembers: any[] = [];
+    this.room?.state.players.forEach((player: ServerPlayer) => {
+      if (player.partyId === currentPlayer.partyId) {
+        partyMembers.push({
+          id: player.id,
+          name: player.name,
+          hp: player.hp,
+          maxHp: player.maxHp,
+          isLeader: player.isPartyLeader
+        });
+      }
+    });
+
+    this.partyUI.updatePartyState(currentPlayer.partyId, partyMembers);
   }
 
   private loadSave() {
