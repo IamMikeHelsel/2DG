@@ -107,3 +107,4 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
 export const EARLY_BIRD_LIMIT = 50;
 export const BETA_TEST_PERIOD_DAYS = 14;
 export const BUG_HUNTER_REPORTS_REQUIRED = 5;
+export const SPAWN_DUMMY_PROBABILITY = 0.3;

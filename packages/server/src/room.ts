@@ -1,7 +1,21 @@
 
 import colyseus from "colyseus";
 import { WorldState, Player, Mob } from "./state.js";
-import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
+import { 
+  TICK_RATE, 
+  MAP, 
+  type ChatMessage, 
+  NPC_MERCHANT, 
+  SHOP_ITEMS, 
+  FounderTier,
+  FOUNDER_REWARDS,
+  EARLY_BIRD_LIMIT,
+  BETA_TEST_PERIOD_DAYS,
+  BUG_HUNTER_REPORTS_REQUIRED,
+  REFERRAL_REWARDS,
+  ANNIVERSARY_REWARDS,
+  SPAWN_DUMMY_PROBABILITY
+} from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
 
 const { Room } = colyseus;
@@ -16,8 +30,11 @@ export class GameRoom extends Room<WorldState> {
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
-
   
+  // Founder system properties
+  private joinCounter = 0;
+  private founderTracker = new Map<string, any>();
+
   // Performance monitoring
   private tickTimes: number[] = [];
   private lastPerformanceLog = 0;
