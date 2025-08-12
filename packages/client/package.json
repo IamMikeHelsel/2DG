@@ -7,7 +7,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo \"(client lint placeholder)\""
+    "lint": "echo \"(client lint placeholder)\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "colyseus.js": "^0.15.11",
@@ -16,6 +19,9 @@
   "devDependencies": {
     "typescript": "^5.5.3",
     "vite": "^5.4.0",
-    "vite-tsconfig-paths": "^5.1.2"
+    "vite-tsconfig-paths": "^5.1.2",
+    "vitest": "^1.6.0",
+    "@vitest/coverage-v8": "^1.6.0",
+    "jsdom": "^24.1.0"
   }
 }
