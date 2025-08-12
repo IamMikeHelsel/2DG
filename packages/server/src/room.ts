@@ -1,8 +1,24 @@
 
 import colyseus from "colyseus";
 import { WorldState, Player, Mob } from "./state.js";
-import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
+import { 
+  TICK_RATE, 
+  MAP, 
+  type ChatMessage, 
+  NPC_MERCHANT, 
+  SHOP_ITEMS,
+  FounderTier,
+  FOUNDER_REWARDS,
+  EARLY_BIRD_LIMIT,
+  BETA_TEST_PERIOD_DAYS,
+  BUG_HUNTER_REPORTS_REQUIRED,
+  REFERRAL_REWARDS,
+  ANNIVERSARY_REWARDS,
+  AdminRole
+} from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
+import { AdminSystem } from "./admin.js";
+import { LiveOpsMonitor } from "./monitoring.js";
 
 const { Room } = colyseus;
 type Client = colyseus.Client;
@@ -10,12 +26,17 @@ type Client = colyseus.Client;
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
 
+const SPAWN_DUMMY_PROBABILITY = 0.3; // 30% chance to spawn training dummy
+
 export class GameRoom extends Room<WorldState> {
   private inputs = new Map<string, Input>();
   private grid!: Grid;
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
+  private joinCounter = 0;
+  private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
+  private adminSystem!: AdminSystem;
 
   
   // Performance monitoring
@@ -31,17 +52,13 @@ export class GameRoom extends Room<WorldState> {
     this.state.height = MAP.height;
 
     this.grid = generateMichiganish();
+    this.adminSystem = new AdminSystem(this);
 
     this.onMessage("input", (client, data: Input) => {
       this.inputs.set(client.sessionId, data);
     });
     this.onMessage("chat", (client, text: string) => {
-      const p = this.state.players.get(client.sessionId);
-      if (!p) return;
-      const clean = sanitizeChat(text);
-      if (!clean) return;
-      const msg: ChatMessage = { from: p.name || "Adventurer", text: clean, ts: Date.now() };
-      this.broadcast("chat", msg);
+      this.handleChat(client, text);
     });
     this.onMessage("attack", (client) => this.handleAttack(client.sessionId));
     this.onMessage("shop:list", (client) => this.handleShopList(client.sessionId));
@@ -53,6 +70,14 @@ export class GameRoom extends Room<WorldState> {
   }
 
   onJoin(client: Client, options: any) {
+    // Check if player is banned
+    if (this.adminSystem && this.adminSystem.isBanned(client.sessionId)) {
+      const banInfo = this.adminSystem.getBanInfo(client.sessionId);
+      const reason = banInfo ? banInfo.reason : 'You have been banned';
+      client.leave(1000, reason);
+      return;
+    }
+
     const p = new Player();
     p.id = client.sessionId;
     p.name = options?.name || "Adventurer";
@@ -60,6 +85,18 @@ export class GameRoom extends Room<WorldState> {
     p.hp = p.maxHp;
     p.gold = 20;
     p.pots = 0;
+    
+    // Initialize admin role
+    p.adminRole = AdminRole.None;
+    p.isBanned = false;
+    p.banExpiresAt = 0;
+    p.banReason = "";
+    
+    // Auto-promote first player to super admin for demo purposes
+    if (this.state.players.size === 0) {
+      p.adminRole = AdminRole.SuperAdmin;
+      console.log(`[ADMIN] Auto-promoted first player ${p.name} to SuperAdmin`);
+    }
     
     // Initialize founder rewards tracking
     p.joinTimestamp = Date.now();
@@ -187,6 +224,35 @@ export class GameRoom extends Room<WorldState> {
       this.logPerformanceStats();
       this.lastPerformanceLog = now;
     }
+  }
+
+  private async handleChat(client: Client, text: string) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p) return;
+
+    const clean = sanitizeChat(text);
+    if (!clean) return;
+
+    // Check if it's an admin command
+    if (clean.startsWith('/')) {
+      const command = this.adminSystem.parseCommand(clean);
+      if (command) {
+        const result = await this.adminSystem.executeCommand(client.sessionId, command);
+        
+        // Send result back to the admin
+        const responseMsg: ChatMessage = {
+          from: '[SYSTEM]',
+          text: result.message,
+          ts: Date.now()
+        };
+        client.send("chat", responseMsg);
+        return;
+      }
+    }
+
+    // Regular chat message
+    const msg: ChatMessage = { from: p.name || "Adventurer", text: clean, ts: Date.now() };
+    this.broadcast("chat", msg);
   }
 
   private handleAttack(playerId: string) {

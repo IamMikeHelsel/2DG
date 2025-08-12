@@ -119,6 +119,31 @@ export enum FounderTier {
   BugHunter = "bug_hunter"
 }
 
+// Admin System
+export enum AdminRole {
+  None = "none",
+  Moderator = "moderator",
+  Admin = "admin",
+  SuperAdmin = "super_admin"
+}
+
+export interface AdminCommand {
+  type: string;
+  args: string[];
+  adminId: string;
+  timestamp: number;
+}
+
+export interface AdminAction {
+  id: string;
+  type: 'kick' | 'ban' | 'broadcast' | 'spawn' | 'teleport' | 'shutdown';
+  adminId: string;
+  targetPlayerId?: string;
+  data: any;
+  timestamp: number;
+  reason?: string;
+}
+
 export interface RewardItem {
   id: string;
   name: string;
