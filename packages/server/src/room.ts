@@ -1,7 +1,12 @@
-import { Room, Client } from "colyseus";
-import { WorldState, Player, Mob } from "./state";
-import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS } from "@toodee/shared";
-import { generateMichiganish, isWalkable, Grid } from "./map";
+
+import colyseus from "colyseus";
+import { WorldState, Player, Mob } from "./state.js";
+import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
+import { generateMichiganish, isWalkable, type Grid } from "./map.js";
+
+const { Room } = colyseus;
+type Client = colyseus.Client;
+
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
 
@@ -11,8 +16,13 @@ export class GameRoom extends Room<WorldState> {
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
-  private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
-  private joinCounter = 0;
+
+  
+  // Performance monitoring
+  private tickTimes: number[] = [];
+  private lastPerformanceLog = 0;
+  private maxTickTime = 0;
+
 
   onCreate(options: any) {
     this.setPatchRate(1000 / 10); // send state ~10/s; interpolate on client
@@ -90,6 +100,8 @@ export class GameRoom extends Room<WorldState> {
   }
 
   update(dt: number) {
+    const tickStart = performance.now();
+    
     // per-player movement
     this.state.players.forEach((p, id) => {
       const inp = this.inputs.get(id);
@@ -123,6 +135,24 @@ export class GameRoom extends Room<WorldState> {
 
       p.lastSeq = inp.seq >>> 0;
     });
+    
+    // Performance monitoring
+    const tickEnd = performance.now();
+    const tickTime = tickEnd - tickStart;
+    this.tickTimes.push(tickTime);
+    this.maxTickTime = Math.max(this.maxTickTime, tickTime);
+    
+    // Keep only last 100 measurements
+    if (this.tickTimes.length > 100) {
+      this.tickTimes.shift();
+    }
+    
+    // Log performance every 30 seconds
+    const now = Date.now();
+    if (now - this.lastPerformanceLog > 30000) {
+      this.logPerformanceStats();
+      this.lastPerformanceLog = now;
+    }
   }
 
   private handleAttack(playerId: string) {
@@ -212,8 +242,6 @@ export class GameRoom extends Room<WorldState> {
     if (!this.isNearMerchant(p)) {
       this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Too far from merchant" });
       return;
-    // Spawn a training dummy near town
-    this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
     }
     const item = SHOP_ITEMS.find(i => i.id === data?.id);
     const qty = Math.max(1, Math.min(99, Number(data?.qty ?? 1) | 0));
@@ -229,6 +257,31 @@ export class GameRoom extends Room<WorldState> {
     p.gold -= cost;
     if (item.id === "pot_small") p.pots = Math.min(999, p.pots + qty);
     this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
+    
+    // Spawn a training dummy near town when someone buys potions
+    if (Math.random() < SPAWN_DUMMY_PROBABILITY) { // 30% chance
+      this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
+    }
+  }
+
+  private logPerformanceStats() {
+    if (this.tickTimes.length === 0) return;
+    
+    const sorted = [...this.tickTimes].sort((a, b) => a - b);
+    const p95Index = Math.floor(sorted.length * 0.95);
+    const p95 = sorted[p95Index];
+    const avg = sorted.reduce((sum, time) => sum + time, 0) / sorted.length;
+    const playerCount = this.state.players.size;
+    
+    console.log(`[Performance] Room ${this.roomId}: ${playerCount} players, avg tick: ${avg.toFixed(2)}ms, p95 tick: ${p95.toFixed(2)}ms, max: ${this.maxTickTime.toFixed(2)}ms`);
+    
+    // Reset max for next period
+    this.maxTickTime = 0;
+    
+    // Alert if p95 exceeds target
+    if (p95 > 8) {
+      console.warn(`⚠️  Performance warning: p95 tick time ${p95.toFixed(2)}ms exceeds 8ms target with ${playerCount} players`);
+    }
   }
 
   private determineFounderTier(joinOrder: number, joinTimestamp: number): FounderTier {
