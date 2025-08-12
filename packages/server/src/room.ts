@@ -1,7 +1,20 @@
 
 import colyseus from "colyseus";
 import { WorldState, Player, Mob } from "./state.js";
-import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
+import { 
+  TICK_RATE, 
+  MAP, 
+  type ChatMessage, 
+  NPC_MERCHANT, 
+  SHOP_ITEMS, 
+  FounderTier,
+  FOUNDER_REWARDS,
+  EARLY_BIRD_LIMIT,
+  BETA_TEST_PERIOD_DAYS,
+  BUG_HUNTER_REPORTS_REQUIRED,
+  REFERRAL_REWARDS,
+  ANNIVERSARY_REWARDS
+} from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
 
 const { Room } = colyseus;
@@ -16,7 +29,8 @@ export class GameRoom extends Room<WorldState> {
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
-
+  private joinCounter = 0; // Add missing property
+  private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>(); // Add missing property
   
   // Performance monitoring
   private tickTimes: number[] = [];
@@ -259,6 +273,7 @@ export class GameRoom extends Room<WorldState> {
     this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
     
     // Spawn a training dummy near town when someone buys potions
+    const SPAWN_DUMMY_PROBABILITY = 0.3; // 30% chance
     if (Math.random() < SPAWN_DUMMY_PROBABILITY) { // 30% chance
       this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
     }
