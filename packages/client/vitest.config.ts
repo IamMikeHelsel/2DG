@@ -2,8 +2,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    environment: 'node',
-    include: ['tests/**/*.spec.ts'],
+    environment: 'jsdom',
+    include: ['tests/**/*.spec.ts', 'src/**/*.test.ts'],
     coverage: {
       reporter: ['text', 'json', 'html'],
       exclude: [
@@ -21,12 +21,7 @@ export default defineConfig({
           statements: 70
         }
       }
-    }
-  },
-  resolve: {
-    alias: {
-      '@toodee/shared': '../shared/dist/index.js'
-    }
+    },
+    globals: true
   }
 });
-
