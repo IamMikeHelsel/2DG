@@ -25,10 +25,77 @@ export const MAP = {
   height: 96
 };
 
+// Map feature types and properties
+export interface TorchLight {
+  type: 'torch' | 'campfire' | 'magical';
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+  intensity: number;
+  flickering?: boolean;
+}
+
+export interface SpawnPoint {
+  type: 'player_spawn' | 'mob_spawn' | 'npc_spawn';
+  x: number;
+  y: number;
+  properties?: Record<string, any>;
+}
+
+export interface Trigger {
+  type: 'zone_transition' | 'quest_trigger' | 'secret_entrance' | 'boss_encounter';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  targetMap?: string;
+  questId?: string;
+  message?: string;
+}
+
+export interface NPCSpawn {
+  id: string;
+  type: 'merchant' | 'quest_giver' | 'guard' | 'villager' | 'bard';
+  x: number;
+  y: number;
+  name: string;
+  dialogue?: string[];
+}
+
+// Map zones and special areas
+export const SPECIAL_AREAS = {
+  TOWN_CENTER: { x: 43, y: 53, radius: 8 },
+  BOSS_ARENA: { x: 20, y: 25, radius: 6 },
+  SECRET_CAVE: { x: 70, y: 30, radius: 4 },
+  DUNGEON_ENTRANCE: { x: 60, y: 70, radius: 3 },
+  TREASURE_ISLAND: { x: 80, y: 45, radius: 3 }
+};
+
+// Environmental storytelling elements
+export const STORY_ELEMENTS = [
+  { x: 45, y: 50, type: 'monument', message: 'A monument to the early settlers of this land...' },
+  { x: 25, y: 30, type: 'ancient_ruins', message: 'Ancient stones speak of a forgotten civilization...' },
+  { x: 65, y: 40, type: 'warning_sign', message: 'DANGER: Beware the creatures beyond these woods!' },
+  { x: 55, y: 75, type: 'grave_marker', message: 'Here lies a brave explorer, lost to the depths...' }
+];
+
 export enum Tile {
   Water = 0,
   Land = 1,
-  Rock = 2
+  Rock = 2,
+  Sand = 3,
+  Dirt = 4,
+  Stone = 5,
+  CaveEntrance = 6,
+  BossArena = 7,
+  TreasureChest = 8,
+  SecretWall = 9,
+  Torch = 10,
+  TownTile = 11,
+  Bridge = 12,
+  DungeonFloor = 13,
+  DungeonWall = 14
 }
 
 // Chat

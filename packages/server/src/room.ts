@@ -1,5 +1,5 @@
 
-import colyseus from "colyseus";
+import { Room, Client } from "colyseus";
 import { WorldState, Player, Mob } from "./state.js";
 import { 
   TICK_RATE, 
@@ -15,10 +15,7 @@ import {
   REFERRAL_REWARDS,
   ANNIVERSARY_REWARDS
 } from "@toodee/shared";
-import { generateMichiganish, isWalkable, type Grid } from "./map.js";
-
-const { Room } = colyseus;
-type Client = colyseus.Client;
+import { generateMichiganish, generateEnhancedMapData, isWalkable, type Grid, type EnhancedMapData } from "./map.js";
 
 const SPAWN_DUMMY_PROBABILITY = 0.3; // 30% chance to spawn dummy when buying potions
 
@@ -28,6 +25,7 @@ type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: bo
 export class GameRoom extends Room<WorldState> {
   private inputs = new Map<string, Input>();
   private grid!: Grid;
+  private enhancedMapData!: EnhancedMapData;
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
@@ -48,7 +46,11 @@ export class GameRoom extends Room<WorldState> {
     this.state.width = MAP.width;
     this.state.height = MAP.height;
 
-    this.grid = generateMichiganish();
+    // Generate enhanced map with special areas
+    this.enhancedMapData = generateEnhancedMapData();
+    this.grid = this.enhancedMapData.grid;
+    
+    console.log(`[Map] Generated enhanced map with ${this.enhancedMapData.spawnPoints.length} spawn points, ${this.enhancedMapData.triggers.length} triggers, and ${this.enhancedMapData.lights.length} light sources`);
 
     this.onMessage("input", (client, data: Input) => {
       this.inputs.set(client.sessionId, data);
