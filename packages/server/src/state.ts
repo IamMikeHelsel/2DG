@@ -22,6 +22,12 @@ export class Player extends Schema {
   @type("boolean") anniversaryParticipated: boolean = false;
   @type("string") displayTitle: string = "";
   @type("string") chatColor: string = "#FFFFFF";
+  
+  // Admin system
+  @type("string") adminRole: string = "none";
+  @type("boolean") isBanned: boolean = false;
+  @type("uint64") banExpiresAt: number = 0;
+  @type("string") banReason: string = "";
 }
 
 export class GameState extends Schema {
