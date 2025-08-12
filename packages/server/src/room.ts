@@ -1,12 +1,22 @@
 
-import colyseus from "colyseus";
+import { Room, Client } from "colyseus";
 import { WorldState, Player, Mob } from "./state.js";
-import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
+import { 
+  TICK_RATE, 
+  MAP, 
+  type ChatMessage, 
+  NPC_MERCHANT, 
+  SHOP_ITEMS,
+  FounderTier,
+  FOUNDER_REWARDS,
+  EARLY_BIRD_LIMIT,
+  BETA_TEST_PERIOD_DAYS,
+  BUG_HUNTER_REPORTS_REQUIRED,
+  REFERRAL_REWARDS,
+  ANNIVERSARY_REWARDS,
+  SPAWN_DUMMY_PROBABILITY
+} from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
-
-const { Room } = colyseus;
-type Client = colyseus.Client;
-
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
 
@@ -16,8 +26,11 @@ export class GameRoom extends Room<WorldState> {
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
-
   
+  // Founder tracking properties
+  private joinCounter = 0;
+  private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
+
   // Performance monitoring
   private tickTimes: number[] = [];
   private lastPerformanceLog = 0;
@@ -48,6 +61,36 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
     this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
     this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
+    
+    // Performance monitoring messages
+    this.onMessage("ping", (client, data: { timestamp: number }) => {
+      client.send("pong", { timestamp: data.timestamp });
+    });
+    
+    // Batched message handling
+    this.onMessage("batch", (client, data: { messages: Array<{ type: string; data: any; age: number }> }) => {
+      data.messages.forEach(msg => {
+        // Process each batched message
+        switch (msg.type) {
+          case "input":
+            this.inputs.set(client.sessionId, msg.data);
+            break;
+          case "chat":
+            const p = this.state.players.get(client.sessionId);
+            if (!p) return;
+            const clean = sanitizeChat(msg.data);
+            if (!clean) return;
+            const chatMsg: ChatMessage = { from: p.name || "Adventurer", text: clean, ts: Date.now() };
+            this.broadcast("chat", chatMsg);
+            break;
+          case "attack":
+            this.handleAttack(client.sessionId);
+            break;
+          default:
+            console.warn(`[Batch] Unknown message type: ${msg.type}`);
+        }
+      });
+    });
 
     this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
   }
