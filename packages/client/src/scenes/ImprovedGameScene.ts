@@ -623,7 +623,7 @@ export class ImprovedGameScene extends Phaser.Scene {
       const itemEl = document.createElement("div");
       itemEl.style.marginBottom = "8px";
       itemEl.innerHTML = `
-        <div>${item.name} - ${item.price} gold</div>
+        <div>${item.name} - ${item.buyPrice} gold</div>
         <button data-item-id="${item.id}" data-qty="1">Buy 1</button>
         <button data-item-id="${item.id}" data-qty="5">Buy 5</button>
       `;

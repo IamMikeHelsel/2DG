@@ -11,7 +11,8 @@ export class Player extends Schema {
   @type("uint16") hp: number = 0;
   @type("uint16") maxHp: number = 0;
   @type("uint32") gold: number = 0;
-  @type("uint16") pots: number = 0; // small potions
+  @type("uint16") pots: number = 0; // health potions
+  @type("uint16") manaPots: number = 0; // mana potions (placeholder)
   
   // Founder rewards system
   @type("string") founderTier: string = "none";
