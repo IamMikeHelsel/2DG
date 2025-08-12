@@ -1,8 +1,8 @@
 
 import colyseus from "colyseus";
-import { WorldState, Player, Mob } from "./state.js";
-import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, FOUNDER_REWARDS, REFERRAL_REWARDS, ANNIVERSARY_REWARDS } from "@toodee/shared";
-import { generateMichiganish, isWalkable, type Grid } from "./map.js";
+import { WorldState, Player, Mob, Boss, AttackTelegraph } from "./state.js";
+import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, FOUNDER_REWARDS, REFERRAL_REWARDS, ANNIVERSARY_REWARDS, ZONES, CRYSTAL_CAVERN_BOSS, BossPhase, type Zone, type ZoneTransitionMessage, type BossAttackTelegraph } from "@toodee/shared";
+import { generateMichiganish, isWalkable, type Grid, generateMapForZone } from "./map.js";
 
 const { Room } = colyseus;
 type Client = colyseus.Client;
@@ -13,7 +13,7 @@ type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: bo
 
 export class GameRoom extends Room<WorldState> {
   private inputs = new Map<string, Input>();
-  private grid!: Grid;
+  private grids = new Map<string, Grid>(); // Grid per zone
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
@@ -21,6 +21,10 @@ export class GameRoom extends Room<WorldState> {
   // Founder tracking
   private joinCounter = 0;
   private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
+  
+  // Boss system
+  private bossTimers = new Map<string, NodeJS.Timeout>();
+  private bossLastAttack = new Map<string, number>();
   
   // Performance monitoring
   private tickTimes: number[] = [];
@@ -33,8 +37,15 @@ export class GameRoom extends Room<WorldState> {
     this.setState(new WorldState());
     this.state.width = MAP.width;
     this.state.height = MAP.height;
+    this.state.currentZone = "overworld";
 
-    this.grid = generateMichiganish();
+    // Generate maps for all zones
+    Object.keys(ZONES).forEach(zoneId => {
+      this.grids.set(zoneId, generateMapForZone(zoneId));
+    });
+
+    // Spawn boss in dungeon
+    this.spawnBoss("crystal_guardian", "dungeon", 40, 15);
 
     this.onMessage("input", (client, data: Input) => {
       this.inputs.set(client.sessionId, data);
@@ -52,6 +63,7 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
     this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
     this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
+    this.onMessage("zone_transition", (client, data: ZoneTransitionMessage) => this.handleZoneTransition(client.sessionId, data));
 
     this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
   }

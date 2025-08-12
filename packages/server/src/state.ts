@@ -12,6 +12,7 @@ export class Player extends Schema {
   @type("uint16") maxHp: number = 0;
   @type("uint32") gold: number = 0;
   @type("uint16") pots: number = 0; // small potions
+  @type("string") currentZone: string = "overworld";
   
   // Founder rewards system
   @type("string") founderTier: string = "none";
@@ -29,6 +30,7 @@ export class GameState extends Schema {
   // serialized minimal map metadata (for now we keep map server-side for collision checks)
   @type("uint16") width: number = 0;
   @type("uint16") height: number = 0;
+  @type("string") currentZone: string = "overworld";
 }
 
 export class Mob extends Schema {
@@ -37,8 +39,37 @@ export class Mob extends Schema {
   @type("float32") y: number = 0;
   @type("uint16") hp: number = 0;
   @type("uint16") maxHp: number = 0;
+  @type("string") zone: string = "overworld";
+  @type("string") mobType: string = "basic";
+}
+
+export class Boss extends Schema {
+  @type("string") id: string = "";
+  @type("string") configId: string = "";
+  @type("float32") x: number = 0;
+  @type("float32") y: number = 0;
+  @type("uint16") hp: number = 0;
+  @type("uint16") maxHp: number = 0;
+  @type("string") zone: string = "";
+  @type("uint8") currentPhase: number = 1;
+  @type("uint64") lastAttackTime: number = 0;
+  @type("boolean") defeated: boolean = false;
+}
+
+export class AttackTelegraph extends Schema {
+  @type("string") id: string = "";
+  @type("string") bossId: string = "";
+  @type("string") abilityId: string = "";
+  @type("float32") x: number = 0;
+  @type("float32") y: number = 0;
+  @type("float32") range: number = 0;
+  @type("string") pattern: string = "";
+  @type("uint64") startTime: number = 0;
+  @type("uint16") duration: number = 0;
 }
 
 export class WorldState extends GameState {
   @type({ map: Mob }) mobs = new MapSchema<Mob>();
+  @type({ map: Boss }) bosses = new MapSchema<Boss>();
+  @type({ map: AttackTelegraph }) telegraphs = new MapSchema<AttackTelegraph>();
 }
