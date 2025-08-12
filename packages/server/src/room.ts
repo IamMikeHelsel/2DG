@@ -1,11 +1,8 @@
 
-import colyseus from "colyseus";
+import { Room, Client } from "colyseus";
 import { WorldState, Player, Mob } from "./state.js";
-import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
+import { TICK_RATE, MAP, type ChatMessage, ChatChannel, type Party, type ChatCommand, CHAT_COLORS, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS } from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
-
-const { Room } = colyseus;
-type Client = colyseus.Client;
 
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
@@ -16,6 +13,13 @@ export class GameRoom extends Room<WorldState> {
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
+  private joinCounter = 0;
+  private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
+  
+  // Chat and party system
+  private parties = new Map<string, Party>();
+  private chatRateLimit = new Map<string, number[]>(); // playerId -> timestamps
+  private readonly maxMessagesPerMinute = 10;
 
   
   // Performance monitoring
@@ -35,13 +39,20 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("input", (client, data: Input) => {
       this.inputs.set(client.sessionId, data);
     });
-    this.onMessage("chat", (client, text: string) => {
-      const p = this.state.players.get(client.sessionId);
-      if (!p) return;
-      const clean = sanitizeChat(text);
-      if (!clean) return;
-      const msg: ChatMessage = { from: p.name || "Adventurer", text: clean, ts: Date.now() };
-      this.broadcast("chat", msg);
+    this.onMessage("chat", (client, data: { text: string; channel?: ChatChannel }) => {
+      this.handleChatMessage(client, data.text, data.channel || ChatChannel.Global);
+    });
+    this.onMessage("chat_channel", (client, channel: ChatChannel) => {
+      this.handleChannelSwitch(client.sessionId, channel);
+    });
+    this.onMessage("party_invite", (client, data: { targetId: string }) => {
+      this.handlePartyInvite(client.sessionId, data.targetId);
+    });
+    this.onMessage("party_accept", (client, data: { partyId: string }) => {
+      this.handlePartyAccept(client.sessionId, data.partyId);
+    });
+    this.onMessage("party_leave", (client) => {
+      this.handlePartyLeave(client.sessionId);
     });
     this.onMessage("attack", (client) => this.handleAttack(client.sessionId));
     this.onMessage("shop:list", (client) => this.handleShopList(client.sessionId));
@@ -95,8 +106,11 @@ export class GameRoom extends Room<WorldState> {
   }
 
   onLeave(client: Client, consented: boolean) {
+    // Handle party cleanup
+    this.handlePartyLeave(client.sessionId);
     this.state.players.delete(client.sessionId);
     this.inputs.delete(client.sessionId);
+    this.chatRateLimit.delete(client.sessionId);
   }
 
   update(dt: number) {
@@ -293,7 +307,8 @@ export class GameRoom extends Room<WorldState> {
     this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
     
     // Spawn a training dummy near town when someone buys potions
-    if (Math.random() < SPAWN_DUMMY_PROBABILITY) { // 30% chance
+    const SPAWN_DUMMY_PROBABILITY = 0.3; // 30% chance
+    if (Math.random() < SPAWN_DUMMY_PROBABILITY) {
       this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
     }
   }
@@ -441,6 +456,400 @@ export class GameRoom extends Room<WorldState> {
       this.clients.find(c => c.sessionId === playerId)?.send("anniversary:reward", {
         reward: reward,
         message: `Anniversary reward unlocked: ${reward.name}!`
+      });
+    }
+  }
+
+  private handleChatMessage(client: Client, text: string, channel: ChatChannel) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p) return;
+    
+    // Rate limiting
+    if (!this.checkChatRateLimit(client.sessionId)) {
+      client.send("chat_error", { message: "You are sending messages too quickly. Please slow down." });
+      return;
+    }
+
+    const clean = sanitizeChat(text);
+    if (!clean) return;
+
+    // Check if it's a command
+    if (clean.startsWith('/')) {
+      this.handleChatCommand(client, clean);
+      return;
+    }
+
+    // Create message
+    const msg: ChatMessage = { 
+      from: p.name || "Adventurer", 
+      text: clean, 
+      ts: Date.now(),
+      channel: channel
+    };
+
+    // Route message based on channel
+    this.routeChatMessage(msg, client.sessionId);
+  }
+
+  private handleChatCommand(client: Client, text: string) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p) return;
+
+    const command = this.parseChatCommand(text);
+    
+    switch (command.command) {
+      case 'whisper':
+      case 'w':
+      case 'tell':
+        this.handleWhisperCommand(client, command);
+        break;
+      case 'party':
+      case 'p':
+        this.handlePartyCommand(client, command);
+        break;
+      case 'invite':
+        this.handleInviteCommand(client, command);
+        break;
+      case 'join':
+        this.handleJoinCommand(client, command);
+        break;
+      case 'leave':
+        this.handlePartyLeave(client.sessionId);
+        break;
+      case 'channel':
+      case 'c':
+        this.handleChannelCommand(client, command);
+        break;
+      default:
+        client.send("chat_error", { message: `Unknown command: ${command.command}` });
+    }
+  }
+
+  private parseChatCommand(text: string): ChatCommand {
+    const parts = text.slice(1).split(' '); // Remove '/' and split
+    return {
+      command: parts[0].toLowerCase(),
+      args: parts.slice(1),
+      originalText: text
+    };
+  }
+
+  private handleWhisperCommand(client: Client, command: ChatCommand) {
+    if (command.args.length < 2) {
+      client.send("chat_error", { message: "Usage: /whisper <player> <message>" });
+      return;
+    }
+
+    const targetName = command.args[0];
+    const message = command.args.slice(1).join(' ');
+    const sender = this.state.players.get(client.sessionId);
+    if (!sender) return;
+
+    // Find target player
+    let targetId = "";
+    for (const [id, player] of this.state.players) {
+      if (player.name.toLowerCase() === targetName.toLowerCase()) {
+        targetId = id;
+        break;
+      }
+    }
+
+    if (!targetId) {
+      client.send("chat_error", { message: `Player "${targetName}" not found.` });
+      return;
+    }
+
+    const msg: ChatMessage = {
+      from: sender.name || "Adventurer",
+      text: message,
+      ts: Date.now(),
+      channel: ChatChannel.Whisper,
+      to: targetName
+    };
+
+    // Send to both sender and receiver
+    client.send("chat", msg);
+    const targetClient = this.clients.find(c => c.sessionId === targetId);
+    if (targetClient) {
+      targetClient.send("chat", msg);
+    }
+  }
+
+  private handlePartyCommand(client: Client, command: ChatCommand) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.partyId) {
+      client.send("chat_error", { message: "You are not in a party." });
+      return;
+    }
+
+    if (command.args.length === 0) {
+      client.send("chat_error", { message: "Usage: /party <message>" });
+      return;
+    }
+
+    const message = command.args.join(' ');
+    const msg: ChatMessage = {
+      from: p.name || "Adventurer",
+      text: message,
+      ts: Date.now(),
+      channel: ChatChannel.Party
+    };
+
+    this.routeChatMessage(msg, client.sessionId);
+  }
+
+  private handleChannelCommand(client: Client, command: ChatCommand) {
+    if (command.args.length === 0) {
+      client.send("chat_error", { message: "Usage: /channel <global|local|party>" });
+      return;
+    }
+
+    const channelName = command.args[0].toLowerCase();
+    let channel: ChatChannel;
+
+    switch (channelName) {
+      case 'global':
+      case 'g':
+        channel = ChatChannel.Global;
+        break;
+      case 'local':
+      case 'l':
+        channel = ChatChannel.Local;
+        break;
+      case 'party':
+      case 'p':
+        channel = ChatChannel.Party;
+        break;
+      default:
+        client.send("chat_error", { message: `Unknown channel: ${channelName}` });
+        return;
+    }
+
+    this.handleChannelSwitch(client.sessionId, channel);
+  }
+
+  private handleChannelSwitch(playerId: string, channel: ChatChannel) {
+    const p = this.state.players.get(playerId);
+    if (!p) return;
+
+    // Validate channel access
+    if (channel === ChatChannel.Party && !p.partyId) {
+      const client = this.clients.find(c => c.sessionId === playerId);
+      client?.send("chat_error", { message: "You must be in a party to use party chat." });
+      return;
+    }
+
+    p.currentChannel = channel;
+    const client = this.clients.find(c => c.sessionId === playerId);
+    client?.send("chat_channel_changed", { channel });
+  }
+
+  private routeChatMessage(msg: ChatMessage, senderId: string) {
+    const sender = this.state.players.get(senderId);
+    if (!sender) return;
+
+    switch (msg.channel) {
+      case ChatChannel.Global:
+        this.broadcast("chat", msg);
+        break;
+      
+      case ChatChannel.Local:
+        this.broadcastLocal(msg, sender);
+        break;
+      
+      case ChatChannel.Party:
+        this.broadcastParty(msg, sender);
+        break;
+      
+      case ChatChannel.System:
+        this.broadcast("chat", msg);
+        break;
+    }
+  }
+
+  private broadcastLocal(msg: ChatMessage, sender: Player) {
+    const LOCAL_RANGE = 10; // tiles
+    this.clients.forEach(client => {
+      const p = this.state.players.get(client.sessionId);
+      if (!p) return;
+      
+      const distance = Math.max(
+        Math.abs(p.x - sender.x),
+        Math.abs(p.y - sender.y)
+      );
+      
+      if (distance <= LOCAL_RANGE) {
+        client.send("chat", msg);
+      }
+    });
+  }
+
+  private broadcastParty(msg: ChatMessage, sender: Player) {
+    if (!sender.partyId) return;
+    
+    const party = this.parties.get(sender.partyId);
+    if (!party) return;
+
+    party.memberIds.forEach(memberId => {
+      const client = this.clients.find(c => c.sessionId === memberId);
+      if (client) {
+        client.send("chat", msg);
+      }
+    });
+  }
+
+  private checkChatRateLimit(playerId: string): boolean {
+    const now = Date.now();
+    const timestamps = this.chatRateLimit.get(playerId) || [];
+    
+    // Remove timestamps older than 1 minute
+    const recentTimestamps = timestamps.filter(ts => now - ts < 60000);
+    
+    if (recentTimestamps.length >= this.maxMessagesPerMinute) {
+      return false;
+    }
+    
+    recentTimestamps.push(now);
+    this.chatRateLimit.set(playerId, recentTimestamps);
+    return true;
+  }
+
+  private handlePartyInvite(senderId: string, targetId: string) {
+    const sender = this.state.players.get(senderId);
+    const target = this.state.players.get(targetId);
+    
+    if (!sender || !target) return;
+    
+    // Create or use existing party
+    let party: Party;
+    if (sender.partyId) {
+      party = this.parties.get(sender.partyId)!;
+      if (party.leaderId !== senderId) {
+        const client = this.clients.find(c => c.sessionId === senderId);
+        client?.send("chat_error", { message: "Only the party leader can invite players." });
+        return;
+      }
+    } else {
+      party = {
+        id: `party_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        name: `${sender.name}'s Party`,
+        leaderId: senderId,
+        memberIds: [senderId],
+        maxMembers: 4
+      };
+      this.parties.set(party.id, party);
+      sender.partyId = party.id;
+    }
+
+    if (party.memberIds.length >= party.maxMembers) {
+      const client = this.clients.find(c => c.sessionId === senderId);
+      client?.send("chat_error", { message: "Party is full." });
+      return;
+    }
+
+    if (target.partyId) {
+      const client = this.clients.find(c => c.sessionId === senderId);
+      client?.send("chat_error", { message: `${target.name} is already in a party.` });
+      return;
+    }
+
+    // Send invite to target
+    const targetClient = this.clients.find(c => c.sessionId === targetId);
+    targetClient?.send("party_invite", { 
+      partyId: party.id, 
+      leaderName: sender.name,
+      partyName: party.name
+    });
+  }
+
+  private handleInviteCommand(client: Client, command: ChatCommand) {
+    if (command.args.length === 0) {
+      client.send("chat_error", { message: "Usage: /invite <player>" });
+      return;
+    }
+
+    const targetName = command.args[0];
+    let targetId = "";
+    for (const [id, player] of this.state.players) {
+      if (player.name.toLowerCase() === targetName.toLowerCase()) {
+        targetId = id;
+        break;
+      }
+    }
+
+    if (!targetId) {
+      client.send("chat_error", { message: `Player "${targetName}" not found.` });
+      return;
+    }
+
+    this.handlePartyInvite(client.sessionId, targetId);
+  }
+
+  private handleJoinCommand(client: Client, command: ChatCommand) {
+    client.send("chat_error", { message: "Use the party invite system to join parties." });
+  }
+
+  private handlePartyAccept(playerId: string, partyId: string) {
+    const player = this.state.players.get(playerId);
+    const party = this.parties.get(partyId);
+    
+    if (!player || !party) return;
+    if (player.partyId) return; // Already in a party
+    if (party.memberIds.length >= party.maxMembers) return; // Party full
+
+    party.memberIds.push(playerId);
+    player.partyId = partyId;
+
+    // Notify party members
+    const joinMsg: ChatMessage = {
+      from: "System",
+      text: `${player.name} joined the party.`,
+      ts: Date.now(),
+      channel: ChatChannel.System
+    };
+
+    party.memberIds.forEach(memberId => {
+      const client = this.clients.find(c => c.sessionId === memberId);
+      if (client) {
+        client.send("chat", joinMsg);
+        client.send("party_updated", { party });
+      }
+    });
+  }
+
+  private handlePartyLeave(playerId: string) {
+    const player = this.state.players.get(playerId);
+    if (!player || !player.partyId) return;
+
+    const party = this.parties.get(player.partyId);
+    if (!party) return;
+
+    // Remove from party
+    party.memberIds = party.memberIds.filter(id => id !== playerId);
+    player.partyId = "";
+
+    // Handle party cleanup/leadership transfer
+    if (party.memberIds.length === 0) {
+      this.parties.delete(party.id);
+    } else if (party.leaderId === playerId) {
+      party.leaderId = party.memberIds[0]; // Transfer leadership
+    }
+
+    // Notify remaining party members
+    if (party.memberIds.length > 0) {
+      const leaveMsg: ChatMessage = {
+        from: "System",
+        text: `${player.name} left the party.`,
+        ts: Date.now(),
+        channel: ChatChannel.System
+      };
+
+      party.memberIds.forEach(memberId => {
+        const client = this.clients.find(c => c.sessionId === memberId);
+        if (client) {
+          client.send("chat", leaveMsg);
+          client.send("party_updated", { party });
+        }
       });
     }
   }

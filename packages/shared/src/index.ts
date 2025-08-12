@@ -88,11 +88,45 @@ export interface TiledMap {
 }
 
 // Chat
+export enum ChatChannel {
+  Global = "global",
+  Local = "local", 
+  Party = "party",
+  System = "system",
+  Whisper = "whisper"
+}
+
 export interface ChatMessage {
   from: string;
   text: string;
   ts: number; // epoch ms
+  channel: ChatChannel;
+  to?: string; // for whisper messages
 }
+
+// Party system
+export interface Party {
+  id: string;
+  name: string;
+  leaderId: string;
+  memberIds: string[];
+  maxMembers: number;
+}
+
+// Chat command handling
+export interface ChatCommand {
+  command: string;
+  args: string[];
+  originalText: string;
+}
+
+export const CHAT_COLORS = {
+  [ChatChannel.Global]: "#FFFFFF",
+  [ChatChannel.Local]: "#90EE90", 
+  [ChatChannel.Party]: "#FFB6C1",
+  [ChatChannel.System]: "#FFA500",
+  [ChatChannel.Whisper]: "#DA70D6"
+} as const;
 
 // Shop / NPCs
 export interface ShopItem {
