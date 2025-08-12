@@ -40,3 +40,4 @@ function loadSave(): any | null {
   } catch {
     return null;
   }
+}
