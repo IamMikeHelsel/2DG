@@ -94,32 +94,66 @@ export class GameRoom extends Room<WorldState> {
     this.state.players.forEach((p, id) => {
       const inp = this.inputs.get(id);
       if (!inp) return;
+      
       const vel = { x: 0, y: 0 };
       if (inp.up) vel.y -= 1;
       if (inp.down) vel.y += 1;
       if (inp.left) vel.x -= 1;
       if (inp.right) vel.x += 1;
-      // normalize
+      
+      // normalize diagonal movement
       if (vel.x !== 0 || vel.y !== 0) {
         const mag = Math.hypot(vel.x, vel.y);
         vel.x /= mag;
         vel.y /= mag;
       }
+      
+      const oldX = p.x;
+      const oldY = p.y;
+      
+      // Calculate new position
       const nx = p.x + vel.x * this.speed * dt;
       const ny = p.y + vel.y * this.speed * dt;
 
-      // collision in tile space (snap to tiles)
+      // Enhanced collision detection
       const tx = Math.round(nx);
       const ty = Math.round(ny);
-      if (isWalkable(this.grid, tx, ty)) {
+      
+      // Check if new position is walkable
+      let canMoveX = true;
+      let canMoveY = true;
+      
+      // Check X movement
+      if (!isWalkable(this.grid, Math.round(nx), Math.round(p.y))) {
+        canMoveX = false;
+      }
+      
+      // Check Y movement  
+      if (!isWalkable(this.grid, Math.round(p.x), Math.round(ny))) {
+        canMoveY = false;
+      }
+      
+      // Check diagonal movement
+      if (!isWalkable(this.grid, Math.round(nx), Math.round(ny))) {
+        canMoveX = false;
+        canMoveY = false;
+      }
+      
+      // Apply movement based on collision results
+      if (canMoveX) {
         p.x = nx;
+      }
+      if (canMoveY) {
         p.y = ny;
       }
-      // direction
-      if (vel.y < 0) p.dir = 0;
-      else if (vel.x > 0) p.dir = 1;
-      else if (vel.y > 0) p.dir = 2;
-      else if (vel.x < 0) p.dir = 3;
+      
+      // Only update direction if actually moving or trying to move
+      if (vel.x !== 0 || vel.y !== 0) {
+        if (vel.y < 0) p.dir = 0; // up
+        else if (vel.x > 0) p.dir = 1; // right
+        else if (vel.y > 0) p.dir = 2; // down
+        else if (vel.x < 0) p.dir = 3; // left
+      }
 
       p.lastSeq = inp.seq >>> 0;
     });
