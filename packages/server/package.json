@@ -14,7 +14,8 @@
     "@colyseus/schema": "^2.0.28",
     "colyseus": "^0.15.16",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "posthog-node": "^5.6.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

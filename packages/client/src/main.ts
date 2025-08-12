@@ -1,6 +1,13 @@
 import Phaser from "phaser";
 import { GameScene } from "./scenes/GameScene";
 import { ImprovedGameScene } from "./scenes/ImprovedGameScene";
+import { analytics } from "./analytics/AnalyticsService";
+
+// Initialize analytics as early as possible
+analytics.initialize();
+
+// Track initial page view
+analytics.trackPageView();
 
 // Use improved scene with character sprites and better terrain
 const useImproved = true;
