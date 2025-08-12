@@ -10,12 +10,12 @@ import { AssetLoader } from "../assets/AssetLoader";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
 import { NPC_CONFIGS } from "../data/npcs";
 
-type ServerPlayer = { 
-  id: string; 
+type ServerPlayer = {
+  id: string;
   name: string;
-  x: number; 
-  y: number; 
-  dir: number; 
+  x: number;
+  y: number;
+  dir: number;
   hp: number;
   maxHp: number;
   gold: number;
@@ -44,7 +44,10 @@ export class EnhancedGameScene extends Phaser.Scene {
   // Entities
   private characters = new Map<string, Character>();
   private npcs = new Map<string, NPC>();
-  private mobs = new Map<string, { sprite: Phaser.GameObjects.Sprite; hpBar: Phaser.GameObjects.Graphics }>();
+  private mobs = new Map<
+    string,
+    { sprite: Phaser.GameObjects.Sprite; hpBar: Phaser.GameObjects.Graphics }
+  >();
   private localPlayer?: Character;
 
   // Input
@@ -68,19 +71,19 @@ export class EnhancedGameScene extends Phaser.Scene {
   preload() {
     // Load splash
     this.load.image("splash", "/toodeegame_splash.png");
-    
+
     // Initialize asset loader
     this.assetLoader = new AssetLoader(this);
-    
+
     // Generate procedural sprites
-    SpriteGenerator.generateCharacterSpritesheet(this, 'player', 0x3498db);
-    SpriteGenerator.generateCharacterSpritesheet(this, 'other_player', 0x9b59b6);
-    SpriteGenerator.generateNPCSpritesheet(this, 'npc_merchant', 0x27ae60, 0xf39c12);
-    SpriteGenerator.generateNPCSpritesheet(this, 'npc_guard', 0x7f8c8d, 0x34495e);
-    SpriteGenerator.generateNPCSpritesheet(this, 'npc_villager', 0xe67e22);
-    SpriteGenerator.generateNPCSpritesheet(this, 'npc_questgiver', 0x8e44ad, 0xf1c40f);
-    SpriteGenerator.generateNPCSpritesheet(this, 'npc_bard', 0x16a085, 0xe74c3c);
-    SpriteGenerator.generateCharacterSpritesheet(this, 'mob_slime', 0xe74c3c);
+    SpriteGenerator.generateCharacterSpritesheet(this, "player", 0x3498db);
+    SpriteGenerator.generateCharacterSpritesheet(this, "other_player", 0x9b59b6);
+    SpriteGenerator.generateNPCSpritesheet(this, "npc_merchant", 0x27ae60, 0xf39c12);
+    SpriteGenerator.generateNPCSpritesheet(this, "npc_guard", 0x7f8c8d, 0x34495e);
+    SpriteGenerator.generateNPCSpritesheet(this, "npc_villager", 0xe67e22);
+    SpriteGenerator.generateNPCSpritesheet(this, "npc_questgiver", 0x8e44ad, 0xf1c40f);
+    SpriteGenerator.generateNPCSpritesheet(this, "npc_bard", 0x16a085, 0xe74c3c);
+    SpriteGenerator.generateCharacterSpritesheet(this, "mob_slime", 0xe74c3c);
   }
 
   async create() {
@@ -100,7 +103,8 @@ export class EnhancedGameScene extends Phaser.Scene {
     this.worldManager.renderMap();
 
     // Show splash
-    this.splashImage = this.add.image(this.scale.width / 2, this.scale.height / 2, "splash")
+    this.splashImage = this.add
+      .image(this.scale.width / 2, this.scale.height / 2, "splash")
       .setScrollFactor(0)
       .setDepth(2000);
 
@@ -121,9 +125,9 @@ export class EnhancedGameScene extends Phaser.Scene {
 
   private createAnimations() {
     // Create animations for all sprite types
-    const spriteKeys = ['player', 'other_player', 'mob_slime'];
-    const npcKeys = ['npc_merchant', 'npc_guard', 'npc_villager', 'npc_questgiver', 'npc_bard'];
-    
+    const spriteKeys = ["player", "other_player", "mob_slime"];
+    const npcKeys = ["npc_merchant", "npc_guard", "npc_villager", "npc_questgiver", "npc_bard"];
+
     [...spriteKeys, ...npcKeys].forEach(key => {
       const animations = AssetLoader.getCharacterAnimations(key);
       this.assetLoader.createAnimations(animations);
@@ -134,7 +138,7 @@ export class EnhancedGameScene extends Phaser.Scene {
     NPC_CONFIGS.forEach(config => {
       const npc = new NPC(this, {
         ...config,
-        onInteract: (npc) => this.handleNPCInteraction(npc)
+        onInteract: npc => this.handleNPCInteraction(npc),
       });
       this.npcs.set(config.id, npc);
     });
@@ -142,7 +146,7 @@ export class EnhancedGameScene extends Phaser.Scene {
 
   private handleNPCInteraction(npc: NPC) {
     // Special handling for merchant
-    if (npc.id === 'merchant') {
+    if (npc.id === "merchant") {
       this.room?.send("shop:list");
       return;
     }
@@ -182,7 +186,7 @@ export class EnhancedGameScene extends Phaser.Scene {
         p.x,
         p.y,
         p.name || "Player",
-        isLocal ? 'player' : 'other_player',
+        isLocal ? "player" : "other_player",
         isLocal
       );
 
@@ -190,7 +194,7 @@ export class EnhancedGameScene extends Phaser.Scene {
 
       if (isLocal) {
         this.localPlayer = character;
-        this.cameras.main.startFollow(character['sprite'], true, 0.15, 0.15);
+        this.cameras.main.startFollow(character["sprite"], true, 0.15, 0.15);
         this.cameras.main.setZoom(3);
         this.cameras.main.setBounds(0, 0, MAP.width * TILE_SIZE, MAP.height * TILE_SIZE, true);
         this.updatePlayerStats(p);
@@ -221,12 +225,12 @@ export class EnhancedGameScene extends Phaser.Scene {
 
     // Mob handlers
     this.room.state.mobs?.onAdd?.((m: ServerMob, key: string) => {
-      const sprite = this.add.sprite(m.x * TILE_SIZE, m.y * TILE_SIZE, 'mob_slime');
-      sprite.play('mob_slime_idle_down');
-      
+      const sprite = this.add.sprite(m.x * TILE_SIZE, m.y * TILE_SIZE, "mob_slime");
+      sprite.play("mob_slime_idle_down");
+
       const hpBar = this.add.graphics();
       this.updateMobHpBar(hpBar, m.x * TILE_SIZE, m.y * TILE_SIZE, m.hp, m.maxHp);
-      
+
       this.mobs.set(key, { sprite, hpBar });
     });
 
@@ -262,21 +266,21 @@ export class EnhancedGameScene extends Phaser.Scene {
     this.time.addEvent({
       delay: 50,
       callback: () => this.sendMovementInput(),
-      loop: true
+      loop: true,
     });
 
     // Attack
-    this.input.keyboard?.on('keydown-SPACE', () => {
+    this.input.keyboard?.on("keydown-SPACE", () => {
       this.room?.send("attack");
     });
 
     // Interact
-    this.input.keyboard?.on('keydown-E', () => {
+    this.input.keyboard?.on("keydown-E", () => {
       this.tryInteract();
     });
 
     // Chat
-    this.input.keyboard?.on('keydown-ENTER', () => {
+    this.input.keyboard?.on("keydown-ENTER", () => {
       this.toggleChat();
     });
   }
@@ -285,12 +289,12 @@ export class EnhancedGameScene extends Phaser.Scene {
     if (!this.room) return;
 
     const input = this.movementSystem.captureInput(this.cursors, this.keys);
-    
+
     if (this.movementSystem.hasInputChanged(input)) {
       this.seq++;
       this.room.send("input", {
         seq: this.seq,
-        ...input
+        ...input,
       });
       this.movementSystem.updateLastInput(input);
 
@@ -335,13 +339,19 @@ export class EnhancedGameScene extends Phaser.Scene {
     }
   }
 
-  private updateMobHpBar(hpBar: Phaser.GameObjects.Graphics, x: number, y: number, hp: number, maxHp: number) {
+  private updateMobHpBar(
+    hpBar: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    hp: number,
+    maxHp: number
+  ) {
     hpBar.clear();
-    
+
     // Background
     hpBar.fillStyle(0x000000, 0.5);
     hpBar.fillRect(x - 16, y - TILE_SIZE * 0.6 - 2, 32, 4);
-    
+
     // HP
     const hpPercent = Math.max(0, Math.min(1, hp / maxHp));
     const barWidth = Math.floor(32 * hpPercent);
@@ -357,34 +367,51 @@ export class EnhancedGameScene extends Phaser.Scene {
 
   private setupUI() {
     // Stats UI
-    this.hpText = this.add.text(12, 12, "HP: 0/0", {
-      fontSize: '14px',
-      color: '#ffffff',
-      stroke: '#000000',
-      strokeThickness: 2
-    }).setScrollFactor(0).setDepth(100);
+    this.hpText = this.add
+      .text(12, 12, "HP: 0/0", {
+        fontSize: "14px",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 2,
+      })
+      .setScrollFactor(0)
+      .setDepth(100);
 
-    this.goldText = this.add.text(12, 32, "Gold: 0", {
-      fontSize: '14px',
-      color: '#ffd700',
-      stroke: '#000000',
-      strokeThickness: 2
-    }).setScrollFactor(0).setDepth(100);
+    this.goldText = this.add
+      .text(12, 32, "Gold: 0", {
+        fontSize: "14px",
+        color: "#ffd700",
+        stroke: "#000000",
+        strokeThickness: 2,
+      })
+      .setScrollFactor(0)
+      .setDepth(100);
 
-    this.potsText = this.add.text(12, 52, "Potions: 0", {
-      fontSize: '14px',
-      color: '#ff69b4',
-      stroke: '#000000',
-      strokeThickness: 2
-    }).setScrollFactor(0).setDepth(100);
+    this.potsText = this.add
+      .text(12, 52, "Potions: 0", {
+        fontSize: "14px",
+        color: "#ff69b4",
+        stroke: "#000000",
+        strokeThickness: 2,
+      })
+      .setScrollFactor(0)
+      .setDepth(100);
 
     // Controls hint
-    this.add.text(12, this.scale.height - 60, "Controls: WASD/Arrows - Move | SPACE - Attack | E - Interact | ENTER - Chat", {
-      fontSize: '11px',
-      color: '#aaaaaa',
-      stroke: '#000000',
-      strokeThickness: 1
-    }).setScrollFactor(0).setDepth(100);
+    this.add
+      .text(
+        12,
+        this.scale.height - 60,
+        "Controls: WASD/Arrows - Move | SPACE - Attack | E - Interact | ENTER - Chat",
+        {
+          fontSize: "11px",
+          color: "#aaaaaa",
+          stroke: "#000000",
+          strokeThickness: 1,
+        }
+      )
+      .setScrollFactor(0)
+      .setDepth(100);
   }
 
   private hideSplash() {
@@ -393,7 +420,7 @@ export class EnhancedGameScene extends Phaser.Scene {
         targets: this.splashImage,
         alpha: 0,
         duration: 600,
-        onComplete: () => this.splashImage?.destroy()
+        onComplete: () => this.splashImage?.destroy(),
       });
     }
   }
@@ -410,7 +437,7 @@ export class EnhancedGameScene extends Phaser.Scene {
       display: "flex",
       flexDirection: "column",
       pointerEvents: "none",
-      zIndex: 10
+      zIndex: 10,
     });
 
     const chatLog = document.createElement("div");
@@ -422,7 +449,7 @@ export class EnhancedGameScene extends Phaser.Scene {
       borderRadius: "4px",
       fontSize: "12px",
       color: "#e6f3ff",
-      marginBottom: "4px"
+      marginBottom: "4px",
     });
 
     const chatInput = document.createElement("input");
@@ -436,10 +463,10 @@ export class EnhancedGameScene extends Phaser.Scene {
       color: "#e6f3ff",
       fontSize: "12px",
       display: "none",
-      pointerEvents: "all"
+      pointerEvents: "all",
     });
 
-    chatInput.addEventListener("keydown", (e) => {
+    chatInput.addEventListener("keydown", e => {
       if (e.key === "Enter" && chatInput.value.trim()) {
         this.room?.send("chat", chatInput.value.trim());
         chatInput.value = "";
@@ -461,7 +488,7 @@ export class EnhancedGameScene extends Phaser.Scene {
 
   private toggleChat() {
     if (!this.chatInputEl) return;
-    
+
     if (this.chatInputEl.style.display === "none") {
       this.chatInputEl.style.display = "block";
       this.chatInputEl.focus();
@@ -473,16 +500,16 @@ export class EnhancedGameScene extends Phaser.Scene {
 
   private appendChat(msg: ChatMessage) {
     if (!this.chatLogEl) return;
-    
+
     const line = document.createElement("div");
     const time = new Date(msg.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     line.textContent = `[${time}] ${msg.from}: ${msg.text}`;
     this.chatLogEl.appendChild(line);
-    
+
     while (this.chatLogEl.childElementCount > 50) {
       this.chatLogEl.firstElementChild?.remove();
     }
-    
+
     this.chatLogEl.scrollTop = this.chatLogEl.scrollHeight;
   }
 
@@ -501,7 +528,7 @@ export class EnhancedGameScene extends Phaser.Scene {
       borderRadius: "8px",
       padding: "16px",
       color: "#e6f3ff",
-      zIndex: 20
+      zIndex: 20,
     });
 
     root.innerHTML = `
@@ -522,7 +549,7 @@ export class EnhancedGameScene extends Phaser.Scene {
       itemsContainer.appendChild(itemEl);
     });
 
-    root.addEventListener("click", (e) => {
+    root.addEventListener("click", e => {
       const target = e.target as HTMLElement;
       if (target.id === "shop-close") {
         root.remove();
@@ -530,7 +557,7 @@ export class EnhancedGameScene extends Phaser.Scene {
       } else if (target.dataset.itemId) {
         this.room?.send("shop:buy", {
           id: target.dataset.itemId,
-          qty: parseInt(target.dataset.qty || "1")
+          qty: parseInt(target.dataset.qty || "1"),
         });
       }
     });
@@ -553,7 +580,7 @@ export class EnhancedGameScene extends Phaser.Scene {
       position: "absolute",
       top: "20px",
       right: "20px",
-      zIndex: 30
+      zIndex: 30,
     });
     document.body.appendChild(this.toastRoot);
   }
@@ -567,12 +594,12 @@ export class EnhancedGameScene extends Phaser.Scene {
       color: "#ffffff",
       borderRadius: "4px",
       fontSize: "14px",
-      animation: "fadeIn 0.3s"
+      animation: "fadeIn 0.3s",
     });
     toast.textContent = message;
-    
+
     this.toastRoot?.appendChild(toast);
-    
+
     setTimeout(() => {
       toast.style.animation = "fadeOut 0.3s";
       setTimeout(() => toast.remove(), 300);
@@ -580,11 +607,14 @@ export class EnhancedGameScene extends Phaser.Scene {
   }
 
   private saveSave(player: ServerPlayer) {
-    localStorage.setItem("toodee_save", JSON.stringify({
-      name: player.name,
-      x: player.x,
-      y: player.y
-    }));
+    localStorage.setItem(
+      "toodee_save",
+      JSON.stringify({
+        name: player.name,
+        x: player.x,
+        y: player.y,
+      })
+    );
   }
 
   private loadSave() {

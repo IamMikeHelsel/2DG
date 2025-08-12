@@ -2,41 +2,44 @@
 
 **ALWAYS follow these instructions first and fallback to search or bash commands only when you encounter unexpected information that does not match the info here.**
 
-## Working Effectively 
+## Working Effectively
 
 ### Bootstrap, Build, and Test the Repository
 
 **CRITICAL: NEVER CANCEL BUILDS OR LONG-RUNNING COMMANDS. All timeouts should be 60+ minutes.**
 
 1. **Setup Environment:**
+
    ```bash
    # Enable pnpm (required - takes ~1.5 seconds)
    corepack enable
    corepack prepare pnpm@9.0.0 --activate
-   
+
    # Install dependencies - takes ~34 seconds. NEVER CANCEL.
    pnpm i
    ```
 
 2. **Build Commands:**
+
    ```bash
    # Build all packages - takes ~8 seconds. NEVER CANCEL. Set timeout to 60+ minutes.
    pnpm -r build
-   
+
    # Build individual packages (faster for iterative development):
    pnpm -F @toodee/shared build    # ~1.5 seconds
-   pnpm -F @toodee/server build    # ~2 seconds  
+   pnpm -F @toodee/server build    # ~2 seconds
    pnpm -F @toodee/client build    # ~6 seconds
-   
+
    # Type check all packages - takes ~3.5 seconds (may have known errors)
    pnpm -r typecheck
    ```
 
 3. **Test Commands:**
+
    ```bash
    # Run all tests - takes ~1.4 seconds. Some tests may fail due to workspace dependencies.
    pnpm -r test
-   
+
    # Run individual package tests (recommended):
    pnpm -F @toodee/shared test     # ~1 second - PASSES
    pnpm -F @toodee/server test     # ~1.1 seconds - may have 1 failing test (map.spec.ts) due to @toodee/shared import issue
@@ -53,15 +56,17 @@
 **Application successfully loads and runs. Client-server connection works.**
 
 1. **Start Both Server and Client (Recommended):**
+
    ```bash
    # Start both concurrently - ready in ~15 seconds
    pnpm dev:all
-   
+
    # Server starts on ws://localhost:2567 (Colyseus)
    # Client starts on http://localhost:5173 (Vite)
    ```
 
 2. **Start Server Only:**
+
    ```bash
    # Server development mode - ready in ~5 seconds
    pnpm -F @toodee/server dev
@@ -100,7 +105,7 @@
 ### CI/CD Pipeline Requirements
 
 - Always run `pnpm -r typecheck` before committing (despite known errors)
-- Always run `pnpm -r build` before committing  
+- Always run `pnpm -r build` before committing
 - GitHub Actions will deploy client to Pages and server to Fly.io on main branch
 
 ## Architecture & Key Locations
@@ -113,7 +118,7 @@ packages/
     src/main.ts     # Entry point - Phaser game configuration
     src/scenes/     # Game scenes (GameScene.ts, ImprovedGameScene.ts, EnhancedGameScene.ts)
     src/net.ts      # Network client code (Colyseus client)
-  server/           # Node + Colyseus authoritative server  
+  server/           # Node + Colyseus authoritative server
     src/index.ts    # Entry point - Express + Colyseus server setup
     src/room.ts     # Game room logic and player management
     src/state.ts    # Game state schema (Colyseus @Schema)
@@ -127,7 +132,7 @@ content/            # Game assets and maps
 ### Important Files When Making Changes
 
 - **Always check `packages/shared/src/index.ts`** when modifying game constants, types, or networking interfaces
-- **Always check `packages/server/src/room.ts`** when modifying game logic or player interactions  
+- **Always check `packages/server/src/room.ts`** when modifying game logic or player interactions
 - **Always check `packages/client/src/scenes/GameScene.ts` or `ImprovedGameScene.ts`** when modifying client-side game behavior
 - **Check `packages/server/src/state.ts`** when modifying player or game state data structures
 
@@ -170,15 +175,15 @@ content/            # Game assets and maps
 
 ```bash
 # Repository root ls -la output:
-.dockerignore  .git  .github  .gitignore  AGENTS.md  Dockerfile  
-docker-compose.yml  fly.toml  package.json  packages  pnpm-lock.yaml  
-pnpm-workspace.yaml  tsconfig.base.json  README.md  FLY_DEPLOYMENT.md  
+.dockerignore  .git  .github  .gitignore  AGENTS.md  Dockerfile
+docker-compose.yml  fly.toml  package.json  packages  pnpm-lock.yaml
+pnpm-workspace.yaml  tsconfig.base.json  README.md  FLY_DEPLOYMENT.md
 FOUNDER_REWARDS.md  2DGAME_design_doc_birthday_demo_3_5_week_vertical_slice.md
 
 # Package.json scripts:
 "build": "pnpm -r build"
 "dev:all": "concurrently -k -n server,client -c cyan,magenta \"pnpm -F @toodee/server dev\" \"VITE_SERVER_URL=ws://localhost:2567 pnpm -F @toodee/client dev\""
-"typecheck": "pnpm -r typecheck"  
+"typecheck": "pnpm -r typecheck"
 "test": "pnpm -r test"
 ```
 
@@ -196,7 +201,7 @@ FOUNDER_REWARDS.md  2DGAME_design_doc_birthday_demo_3_5_week_vertical_slice.md
 ## Timing Expectations
 
 - **pnpm i:** 30-40 seconds
-- **pnpm -r build:** 8 seconds  
+- **pnpm -r build:** 8 seconds
 - **pnpm dev:all startup:** 15 seconds
 - **Individual package builds:** 1-6 seconds each
 - **Tests:** 1-2 seconds each package

@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { generateMichiganish, isWalkable } from '../src/map';
+import { describe, it, expect } from "vitest";
+import { generateMichiganish, isWalkable } from "../src/map";
 
-describe('server map generation', () => {
-  it('generates a walkable spawn area', () => {
+describe("server map generation", () => {
+  it("generates a walkable spawn area", () => {
     const grid = generateMichiganish();
     // Spawn center in generator uses ~45%,55%; sampling there should be walkable
     const w = (grid as any).w as number;
@@ -12,4 +12,3 @@ describe('server map generation', () => {
     expect(isWalkable(grid, sx, sy)).toBe(true);
   });
 });
-

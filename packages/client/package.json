@@ -7,7 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo \"(client lint placeholder)\""
+    "lint": "eslint src --ext .ts,.tsx --fix"
   },
   "dependencies": {
     "colyseus.js": "^0.15.11",

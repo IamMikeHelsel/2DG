@@ -2,13 +2,13 @@ name: client
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - 'packages/client/**'
-      - 'packages/shared/**'
-      - 'package.json'
-      - 'pnpm-workspace.yaml'
-      - 'tsconfig.base.json'
+      - "packages/client/**"
+      - "packages/shared/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
   workflow_dispatch:
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
       - name: Enable corepack / pnpm
         run: |
           corepack enable

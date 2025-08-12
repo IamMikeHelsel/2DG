@@ -1,5 +1,5 @@
-import { Scene, GameObjects } from 'phaser';
-import { TILE_SIZE } from '@toodee/shared';
+import { Scene, GameObjects } from "phaser";
+import { TILE_SIZE } from "@toodee/shared";
 
 export interface NPCDialogue {
   text: string;
@@ -30,7 +30,7 @@ export class NPC {
   private shadowSprite: GameObjects.Ellipse;
   private currentDialogue: string;
   private isShowingIndicator: boolean = false;
-  
+
   public id: string;
   public name: string;
   public x: number;
@@ -46,7 +46,7 @@ export class NPC {
     this.x = config.x;
     this.y = config.y;
     this.dialogues = config.dialogues;
-    this.currentDialogue = config.initialDialogue || 'default';
+    this.currentDialogue = config.initialDialogue || "default";
     this.interactionDistance = config.interactionDistance || 2;
     this.onInteract = config.onInteract;
 
@@ -63,33 +63,28 @@ export class NPC {
     // Create sprite
     this.sprite = scene.add.sprite(this.x * TILE_SIZE, this.y * TILE_SIZE, config.spriteKey);
     this.sprite.setOrigin(0.5, 0.7);
-    
+
     // Create name text
-    this.nameText = scene.add.text(
-      this.x * TILE_SIZE,
-      this.y * TILE_SIZE - 20,
-      this.name,
-      {
-        fontSize: '12px',
-        color: '#00ff00',
-        stroke: '#000000',
-        strokeThickness: 2
-      }
-    );
+    this.nameText = scene.add.text(this.x * TILE_SIZE, this.y * TILE_SIZE - 20, this.name, {
+      fontSize: "12px",
+      color: "#00ff00",
+      stroke: "#000000",
+      strokeThickness: 2,
+    });
     this.nameText.setOrigin(0.5, 1);
 
     // Create interaction indicator (hidden by default)
     this.interactionIndicator = scene.add.text(
       this.x * TILE_SIZE,
       this.y * TILE_SIZE - 35,
-      'Press E to interact',
+      "Press E to interact",
       {
-        fontSize: '10px',
-        color: '#ffff00',
-        stroke: '#000000',
+        fontSize: "10px",
+        color: "#ffff00",
+        stroke: "#000000",
         strokeThickness: 2,
-        backgroundColor: '#00000088',
-        padding: { x: 4, y: 2 }
+        backgroundColor: "#00000088",
+        padding: { x: 4, y: 2 },
       }
     );
     this.interactionIndicator.setOrigin(0.5, 1);
@@ -116,7 +111,7 @@ export class NPC {
     if (!this.isShowingIndicator) {
       this.isShowingIndicator = true;
       this.interactionIndicator.setVisible(true);
-      
+
       // Floating animation
       this.scene.tweens.add({
         targets: this.interactionIndicator,
@@ -124,7 +119,7 @@ export class NPC {
         duration: 500,
         yoyo: true,
         repeat: -1,
-        ease: 'Sine.easeInOut'
+        ease: "Sine.easeInOut",
       });
     }
   }
@@ -168,17 +163,17 @@ export class NPC {
   setPosition(x: number, y: number) {
     this.x = x;
     this.y = y;
-    
+
     const pixelX = x * TILE_SIZE;
     const pixelY = y * TILE_SIZE;
-    
+
     this.sprite.setPosition(pixelX, pixelY);
     this.shadowSprite.setPosition(pixelX, pixelY + 4);
     this.nameText.setPosition(pixelX, pixelY - 20);
     this.interactionIndicator.setPosition(pixelX, pixelY - 35);
   }
 
-  faceDirection(direction: 'up' | 'down' | 'left' | 'right') {
+  faceDirection(direction: "up" | "down" | "left" | "right") {
     const animKey = `${this.sprite.texture.key}_idle_${direction}`;
     if (this.scene.anims.exists(animKey)) {
       this.sprite.play(animKey, true);
@@ -192,11 +187,11 @@ export class NPC {
   faceTowards(x: number, y: number) {
     const dx = x - this.x;
     const dy = y - this.y;
-    
+
     if (Math.abs(dx) > Math.abs(dy)) {
-      this.faceDirection(dx > 0 ? 'right' : 'left');
+      this.faceDirection(dx > 0 ? "right" : "left");
     } else {
-      this.faceDirection(dy > 0 ? 'down' : 'up');
+      this.faceDirection(dy > 0 ? "down" : "up");
     }
   }
 

@@ -1,6 +1,7 @@
 # Fly.io Deployment Guide for Toodeegame
 
 ## Prerequisites
+
 - Fly.io account (sign up at https://fly.io)
 - Fly CLI installed (already done)
 - GitHub repository configured
@@ -8,12 +9,14 @@
 ## 1. Initial Setup
 
 ### Authenticate with Fly.io
+
 ```bash
 export PATH="/Users/mike/.fly/bin:$PATH"  # Add to your ~/.zshrc
 flyctl auth login
 ```
 
 ### Create the Fly.io App
+
 ```bash
 # This creates the app on Fly.io (only needed once)
 flyctl apps create toodeegame --org personal
@@ -22,6 +25,7 @@ flyctl apps create toodeegame --org personal
 ## 2. Environment Variables & Secrets
 
 ### Set required secrets for your app:
+
 ```bash
 # Database (Supabase)
 flyctl secrets set SUPABASE_URL="your-supabase-url-here"
@@ -39,6 +43,7 @@ flyctl secrets set SESSION_SECRET="your-random-session-secret-here"
 ```
 
 ### View current secrets:
+
 ```bash
 flyctl secrets list
 ```
@@ -46,6 +51,7 @@ flyctl secrets list
 ## 3. Deployment
 
 ### Manual Deploy
+
 ```bash
 # Deploy from local directory
 flyctl deploy
@@ -55,6 +61,7 @@ flyctl deploy --build-arg NODE_ENV=production
 ```
 
 ### Monitor Deployment
+
 ```bash
 # Watch logs
 flyctl logs
@@ -69,16 +76,17 @@ flyctl ssh console
 ## 4. GitHub Actions Setup
 
 Create `.github/workflows/deploy.yml`:
+
 ```yaml
 name: Deploy to Fly.io
 on:
   push:
     branches: [main]
     paths:
-      - 'packages/server/**'
-      - 'packages/shared/**'
-      - 'Dockerfile'
-      - 'fly.toml'
+      - "packages/server/**"
+      - "packages/shared/**"
+      - "Dockerfile"
+      - "fly.toml"
 
 jobs:
   deploy:
@@ -92,14 +100,17 @@ jobs:
 ```
 
 ### Get your Fly API token:
+
 ```bash
 flyctl auth token
 ```
+
 Then add it to GitHub Secrets as `FLY_API_TOKEN`
 
 ## 5. Scaling & Management
 
 ### Scale the app:
+
 ```bash
 # Scale to 2 instances
 flyctl scale count 2
@@ -112,6 +123,7 @@ flyctl scale show
 ```
 
 ### Regions:
+
 ```bash
 # Add regions for better latency
 flyctl regions add lax  # Los Angeles
@@ -134,11 +146,13 @@ flyctl certs show yourgame.com
 ## 7. Monitoring
 
 ### View metrics:
+
 ```bash
 flyctl dashboard metrics
 ```
 
 ### Open dashboard:
+
 ```bash
 flyctl dashboard
 ```
@@ -170,11 +184,13 @@ flyctl apps destroy toodeegame
 Update your client to connect to Fly.io server:
 
 In `packages/client/.env`:
+
 ```
 VITE_SERVER_URL=wss://toodeegame.fly.dev
 ```
 
 Or for local development:
+
 ```
 VITE_SERVER_URL=ws://localhost:2567
 ```
@@ -189,6 +205,7 @@ VITE_SERVER_URL=ws://localhost:2567
 4. **Cold starts**: Set min_machines_running = 1 to avoid
 
 ### Debug commands:
+
 ```bash
 # Check recent logs
 flyctl logs --tail 100
@@ -205,11 +222,13 @@ netstat -tulpn
 ## Cost Estimation
 
 Free tier includes:
+
 - 3 shared-cpu-1x VMs (1 vCPU, 256MB RAM)
 - 3GB persistent storage
 - 160GB outbound data transfer
 
 For the game (estimated monthly):
+
 - 1 VM with 512MB RAM: ~$5
 - Additional regions: ~$5 per region
 - Total: $5-15/month for small-scale

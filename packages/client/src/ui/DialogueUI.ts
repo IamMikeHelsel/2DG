@@ -1,5 +1,5 @@
-import { Scene, GameObjects } from 'phaser';
-import { NPCDialogue } from '../entities/NPC';
+import { Scene, GameObjects } from "phaser";
+import { NPCDialogue } from "../entities/NPC";
 
 export class DialogueUI {
   private scene: Scene;
@@ -28,23 +28,23 @@ export class DialogueUI {
     this.container.add(this.background);
 
     // Create NPC name text
-    this.npcNameText = scene.add.text(-280, -80, '', {
-      fontSize: '18px',
-      color: '#00ff00',
-      fontStyle: 'bold'
+    this.npcNameText = scene.add.text(-280, -80, "", {
+      fontSize: "18px",
+      color: "#00ff00",
+      fontStyle: "bold",
     });
     this.container.add(this.npcNameText);
 
     // Create dialogue text
-    this.dialogueText = scene.add.text(-280, -50, '', {
-      fontSize: '14px',
-      color: '#ffffff',
-      wordWrap: { width: 560 }
+    this.dialogueText = scene.add.text(-280, -50, "", {
+      fontSize: "14px",
+      color: "#ffffff",
+      wordWrap: { width: 560 },
     });
     this.container.add(this.dialogueText);
 
     // Setup ESC key to close
-    this.scene.input.keyboard?.on('keydown-ESC', () => {
+    this.scene.input.keyboard?.on("keydown-ESC", () => {
       if (this.isShowing) {
         this.hide();
       }
@@ -54,7 +54,7 @@ export class DialogueUI {
   show(npcName: string, dialogue: NPCDialogue, onClose?: () => void) {
     this.isShowing = true;
     this.onClose = onClose;
-    
+
     // Clear previous response buttons
     this.clearResponseButtons();
 
@@ -79,7 +79,7 @@ export class DialogueUI {
       });
     } else {
       // Create a default "Close" button
-      this.createResponseButton('Close', 0, () => this.hide());
+      this.createResponseButton("Close", 0, () => this.hide());
     }
 
     // Show container with animation
@@ -92,13 +92,13 @@ export class DialogueUI {
       alpha: 1,
       y: this.scene.cameras.main.height - 150,
       duration: 200,
-      ease: 'Power2'
+      ease: "Power2",
     });
   }
 
   hide() {
     if (!this.isShowing) return;
-    
+
     this.isShowing = false;
 
     this.scene.tweens.add({
@@ -106,7 +106,7 @@ export class DialogueUI {
       alpha: 0,
       y: this.scene.cameras.main.height,
       duration: 200,
-      ease: 'Power2',
+      ease: "Power2",
       onComplete: () => {
         this.container.setVisible(false);
         this.clearResponseButtons();
@@ -114,12 +114,12 @@ export class DialogueUI {
           this.onClose();
           this.onClose = undefined;
         }
-      }
+      },
     });
   }
 
   private createResponseButton(text: string, index: number, onClick: () => void) {
-    const buttonY = 20 + (index * 35);
+    const buttonY = 20 + index * 35;
     const buttonContainer = this.scene.add.container(-280, buttonY);
 
     // Button background
@@ -130,23 +130,23 @@ export class DialogueUI {
 
     // Button text
     const buttonText = this.scene.add.text(10, 0, `> ${text}`, {
-      fontSize: '14px',
-      color: '#ffffff'
+      fontSize: "14px",
+      color: "#ffffff",
     });
     buttonText.setOrigin(0, 0.5);
 
     // Add hover effect
-    buttonBg.on('pointerover', () => {
+    buttonBg.on("pointerover", () => {
       buttonBg.setFillStyle(0x555555, 0.9);
-      buttonText.setColor('#ffff00');
+      buttonText.setColor("#ffff00");
     });
 
-    buttonBg.on('pointerout', () => {
+    buttonBg.on("pointerout", () => {
       buttonBg.setFillStyle(0x333333, 0.8);
-      buttonText.setColor('#ffffff');
+      buttonText.setColor("#ffffff");
     });
 
-    buttonBg.on('pointerdown', onClick);
+    buttonBg.on("pointerdown", onClick);
 
     buttonContainer.add([buttonBg, buttonText]);
     this.container.add(buttonContainer);

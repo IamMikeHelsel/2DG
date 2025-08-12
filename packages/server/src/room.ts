@@ -1,4 +1,3 @@
-
 import colyseus from "colyseus";
 import { WorldState, Player, Mob } from "./state.js";
 import { TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS } from "@toodee/shared";
@@ -6,7 +5,6 @@ import { generateMichiganish, isWalkable, type Grid } from "./map.js";
 
 const { Room } = colyseus;
 type Client = colyseus.Client;
-
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
 
@@ -17,12 +15,10 @@ export class GameRoom extends Room<WorldState> {
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
 
-  
   // Performance monitoring
   private tickTimes: number[] = [];
   private lastPerformanceLog = 0;
   private maxTickTime = 0;
-
 
   onCreate(options: any) {
     this.setPatchRate(1000 / 10); // send state ~10/s; interpolate on client
@@ -43,13 +39,19 @@ export class GameRoom extends Room<WorldState> {
       const msg: ChatMessage = { from: p.name || "Adventurer", text: clean, ts: Date.now() };
       this.broadcast("chat", msg);
     });
-    this.onMessage("attack", (client) => this.handleAttack(client.sessionId));
-    this.onMessage("shop:list", (client) => this.handleShopList(client.sessionId));
-    this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) => this.handleShopBuy(client.sessionId, data));
-    this.onMessage("bug_report", (client, data: { description: string }) => this.handleBugReport(client.sessionId, data));
-    this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
+    this.onMessage("attack", client => this.handleAttack(client.sessionId));
+    this.onMessage("shop:list", client => this.handleShopList(client.sessionId));
+    this.onMessage("shop:buy", (client, data: { id: string; qty?: number }) =>
+      this.handleShopBuy(client.sessionId, data)
+    );
+    this.onMessage("bug_report", (client, data: { description: string }) =>
+      this.handleBugReport(client.sessionId, data)
+    );
+    this.onMessage("referral", (client, data: { referredPlayerId: string }) =>
+      this.handleReferral(client.sessionId, data)
+    );
 
-    this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
+    this.setSimulationInterval(dtMS => this.update(dtMS / 1000), 1000 / TICK_RATE);
   }
 
   onJoin(client: Client, options: any) {
@@ -60,7 +62,7 @@ export class GameRoom extends Room<WorldState> {
     p.hp = p.maxHp;
     p.gold = 20;
     p.pots = 0;
-    
+
     // Initialize founder rewards tracking
     p.joinTimestamp = Date.now();
     p.bugReports = 0;
@@ -68,18 +70,19 @@ export class GameRoom extends Room<WorldState> {
     p.anniversaryParticipated = false;
     p.displayTitle = "";
     p.chatColor = "#FFFFFF";
-    
+
     // Determine founder tier
     this.joinCounter++;
     const founderTier = this.determineFounderTier(this.joinCounter, p.joinTimestamp);
     p.founderTier = founderTier;
     this.founderTracker.set(client.sessionId, { joinOrder: this.joinCounter, tier: founderTier });
-    
+
     // Grant initial founder rewards
     this.grantFounderRewards(p, founderTier);
-    
+
     // spawn near center (or restore from client-provided snapshot for demo persistence)
-    const rx = options?.restore?.x, ry = options?.restore?.y;
+    const rx = options?.restore?.x,
+      ry = options?.restore?.y;
     if (typeof rx === "number" && typeof ry === "number") {
       const tx = clamp(Math.round(rx), 0, MAP.width - 1);
       const ty = clamp(Math.round(ry), 0, MAP.height - 1);
@@ -89,8 +92,10 @@ export class GameRoom extends Room<WorldState> {
       p.x = Math.floor(MAP.width * 0.45);
       p.y = Math.floor(MAP.height * 0.55);
     }
-    if (typeof options?.restore?.gold === "number") p.gold = Math.max(0, Math.min(999999, Math.floor(options.restore.gold)));
-    if (typeof options?.restore?.pots === "number") p.pots = Math.max(0, Math.min(999, Math.floor(options.restore.pots)));
+    if (typeof options?.restore?.gold === "number")
+      p.gold = Math.max(0, Math.min(999999, Math.floor(options.restore.gold)));
+    if (typeof options?.restore?.pots === "number")
+      p.pots = Math.max(0, Math.min(999, Math.floor(options.restore.pots)));
     this.state.players.set(client.sessionId, p);
   }
 
@@ -101,28 +106,28 @@ export class GameRoom extends Room<WorldState> {
 
   update(dt: number) {
     const tickStart = performance.now();
-    
+
     // per-player movement
     this.state.players.forEach((p, id) => {
       const inp = this.inputs.get(id);
       if (!inp) return;
-      
+
       const vel = { x: 0, y: 0 };
       if (inp.up) vel.y -= 1;
       if (inp.down) vel.y += 1;
       if (inp.left) vel.x -= 1;
       if (inp.right) vel.x += 1;
-      
+
       // normalize diagonal movement
       if (vel.x !== 0 || vel.y !== 0) {
         const mag = Math.hypot(vel.x, vel.y);
         vel.x /= mag;
         vel.y /= mag;
       }
-      
+
       const oldX = p.x;
       const oldY = p.y;
-      
+
       // Calculate new position
       const nx = p.x + vel.x * this.speed * dt;
       const ny = p.y + vel.y * this.speed * dt;
@@ -130,27 +135,27 @@ export class GameRoom extends Room<WorldState> {
       // Enhanced collision detection
       const tx = Math.round(nx);
       const ty = Math.round(ny);
-      
+
       // Check if new position is walkable
       let canMoveX = true;
       let canMoveY = true;
-      
+
       // Check X movement
       if (!isWalkable(this.grid, Math.round(nx), Math.round(p.y))) {
         canMoveX = false;
       }
-      
-      // Check Y movement  
+
+      // Check Y movement
       if (!isWalkable(this.grid, Math.round(p.x), Math.round(ny))) {
         canMoveY = false;
       }
-      
+
       // Check diagonal movement
       if (!isWalkable(this.grid, Math.round(nx), Math.round(ny))) {
         canMoveX = false;
         canMoveY = false;
       }
-      
+
       // Apply movement based on collision results
       if (canMoveX) {
         p.x = nx;
@@ -158,29 +163,32 @@ export class GameRoom extends Room<WorldState> {
       if (canMoveY) {
         p.y = ny;
       }
-      
+
       // Only update direction if actually moving or trying to move
       if (vel.x !== 0 || vel.y !== 0) {
-        if (vel.y < 0) p.dir = 0; // up
-        else if (vel.x > 0) p.dir = 1; // right
-        else if (vel.y > 0) p.dir = 2; // down
+        if (vel.y < 0)
+          p.dir = 0; // up
+        else if (vel.x > 0)
+          p.dir = 1; // right
+        else if (vel.y > 0)
+          p.dir = 2; // down
         else if (vel.x < 0) p.dir = 3; // left
       }
 
       p.lastSeq = inp.seq >>> 0;
     });
-    
+
     // Performance monitoring
     const tickEnd = performance.now();
     const tickTime = tickEnd - tickStart;
     this.tickTimes.push(tickTime);
     this.maxTickTime = Math.max(this.maxTickTime, tickTime);
-    
+
     // Keep only last 100 measurements
     if (this.tickTimes.length > 100) {
       this.tickTimes.shift();
     }
-    
+
     // Log performance every 30 seconds
     const now = Date.now();
     if (now - this.lastPerformanceLog > 30000) {
@@ -203,7 +211,8 @@ export class GameRoom extends Room<WorldState> {
     // Attack mobs
     let hitSomething = false;
     this.state.mobs.forEach((m, key) => {
-      const mx = Math.round(m.x), my = Math.round(m.y);
+      const mx = Math.round(m.x),
+        my = Math.round(m.y);
       if (mx === front.x && my === front.y && m.hp > 0 && !hitSomething) {
         m.hp = Math.max(0, m.hp - 30);
         hitSomething = true;
@@ -274,47 +283,60 @@ export class GameRoom extends Room<WorldState> {
     const p = this.state.players.get(playerId);
     if (!p) return;
     if (!this.isNearMerchant(p)) {
-      this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Too far from merchant" });
+      this.clients
+        .find(c => c.sessionId === playerId)
+        ?.send("shop:result", { ok: false, reason: "Too far from merchant" });
       return;
     }
     const item = SHOP_ITEMS.find(i => i.id === data?.id);
     const qty = Math.max(1, Math.min(99, Number(data?.qty ?? 1) | 0));
     if (!item) {
-      this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Unknown item" });
+      this.clients
+        .find(c => c.sessionId === playerId)
+        ?.send("shop:result", { ok: false, reason: "Unknown item" });
       return;
     }
     const cost = item.price * qty;
     if (p.gold < cost) {
-      this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Not enough gold", gold: p.gold, pots: p.pots });
+      this.clients
+        .find(c => c.sessionId === playerId)
+        ?.send("shop:result", { ok: false, reason: "Not enough gold", gold: p.gold, pots: p.pots });
       return;
     }
     p.gold -= cost;
     if (item.id === "pot_small") p.pots = Math.min(999, p.pots + qty);
-    this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
-    
+    this.clients
+      .find(c => c.sessionId === playerId)
+      ?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
+
     // Spawn a training dummy near town when someone buys potions
-    if (Math.random() < SPAWN_DUMMY_PROBABILITY) { // 30% chance
+    if (Math.random() < SPAWN_DUMMY_PROBABILITY) {
+      // 30% chance
       this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
     }
   }
 
   private logPerformanceStats() {
     if (this.tickTimes.length === 0) return;
-    
+
     const sorted = [...this.tickTimes].sort((a, b) => a - b);
     const p95Index = Math.floor(sorted.length * 0.95);
     const p95 = sorted[p95Index];
     const avg = sorted.reduce((sum, time) => sum + time, 0) / sorted.length;
     const playerCount = this.state.players.size;
-    
-    console.log(`[Performance] Room ${this.roomId}: ${playerCount} players, avg tick: ${avg.toFixed(2)}ms, p95 tick: ${p95.toFixed(2)}ms, max: ${this.maxTickTime.toFixed(2)}ms`);
-    
+
+    console.log(
+      `[Performance] Room ${this.roomId}: ${playerCount} players, avg tick: ${avg.toFixed(2)}ms, p95 tick: ${p95.toFixed(2)}ms, max: ${this.maxTickTime.toFixed(2)}ms`
+    );
+
     // Reset max for next period
     this.maxTickTime = 0;
-    
+
     // Alert if p95 exceeds target
     if (p95 > 8) {
-      console.warn(`⚠️  Performance warning: p95 tick time ${p95.toFixed(2)}ms exceeds 8ms target with ${playerCount} players`);
+      console.warn(
+        `⚠️  Performance warning: p95 tick time ${p95.toFixed(2)}ms exceeds 8ms target with ${playerCount} players`
+      );
     }
   }
 
@@ -323,13 +345,13 @@ export class GameRoom extends Room<WorldState> {
     if (joinOrder <= EARLY_BIRD_LIMIT) {
       return FounderTier.EarlyBird;
     }
-    
+
     // Beta Tester: Within first 2 weeks (simulated with current demo)
     const daysSinceLaunch = (Date.now() - joinTimestamp) / (1000 * 60 * 60 * 24);
     if (daysSinceLaunch <= BETA_TEST_PERIOD_DAYS) {
       return FounderTier.BetaTester;
     }
-    
+
     return FounderTier.None;
   }
 
@@ -337,7 +359,7 @@ export class GameRoom extends Room<WorldState> {
     const rewards = FOUNDER_REWARDS[tier];
     for (const reward of rewards) {
       player.unlockedRewards.push(reward.id);
-      
+
       // Apply specific reward effects
       switch (reward.type) {
         case "title":
@@ -359,68 +381,79 @@ export class GameRoom extends Room<WorldState> {
   private handleBugReport(playerId: string, data: { description: string }) {
     const p = this.state.players.get(playerId);
     if (!p) return;
-    
+
     // Basic validation
     if (!data.description || data.description.length < 10) {
-      this.clients.find(c => c.sessionId === playerId)?.send("bug_report:result", { 
-        ok: false, 
-        reason: "Bug report must be at least 10 characters" 
-      });
+      this.clients
+        .find(c => c.sessionId === playerId)
+        ?.send("bug_report:result", {
+          ok: false,
+          reason: "Bug report must be at least 10 characters",
+        });
       return;
     }
-    
+
     p.bugReports++;
-    
+
     // Check if player qualifies for Bug Hunter tier
     if (p.bugReports >= BUG_HUNTER_REPORTS_REQUIRED && p.founderTier === FounderTier.None) {
       p.founderTier = FounderTier.BugHunter;
       this.grantFounderRewards(p, FounderTier.BugHunter);
     }
-    
-    this.clients.find(c => c.sessionId === playerId)?.send("bug_report:result", { 
-      ok: true, 
-      reportsCount: p.bugReports,
-      message: p.bugReports >= BUG_HUNTER_REPORTS_REQUIRED ? "Bug Hunter tier unlocked!" : undefined
-    });
+
+    this.clients
+      .find(c => c.sessionId === playerId)
+      ?.send("bug_report:result", {
+        ok: true,
+        reportsCount: p.bugReports,
+        message:
+          p.bugReports >= BUG_HUNTER_REPORTS_REQUIRED ? "Bug Hunter tier unlocked!" : undefined,
+      });
   }
 
   private handleReferral(playerId: string, data: { referredPlayerId: string }) {
     const p = this.state.players.get(playerId);
     if (!p) return;
-    
+
     // Basic validation - in a real system this would verify the referred player exists and is new
     if (!data.referredPlayerId) {
-      this.clients.find(c => c.sessionId === playerId)?.send("referral:result", {
-        ok: false,
-        reason: "Invalid referral data"
-      });
+      this.clients
+        .find(c => c.sessionId === playerId)
+        ?.send("referral:result", {
+          ok: false,
+          reason: "Invalid referral data",
+        });
       return;
     }
-    
+
     p.referralsCount++;
-    
+
     // Check for referral rewards
     const referralReward = REFERRAL_REWARDS.find(r => r.referrals === p.referralsCount);
     if (referralReward) {
       p.unlockedRewards.push(referralReward.reward.id);
-      
-      this.clients.find(c => c.sessionId === playerId)?.send("referral:result", {
-        ok: true,
-        referralsCount: p.referralsCount,
-        rewardUnlocked: referralReward.reward
-      });
+
+      this.clients
+        .find(c => c.sessionId === playerId)
+        ?.send("referral:result", {
+          ok: true,
+          referralsCount: p.referralsCount,
+          rewardUnlocked: referralReward.reward,
+        });
     } else {
-      this.clients.find(c => c.sessionId === playerId)?.send("referral:result", {
-        ok: true,
-        referralsCount: p.referralsCount
-      });
+      this.clients
+        .find(c => c.sessionId === playerId)
+        ?.send("referral:result", {
+          ok: true,
+          referralsCount: p.referralsCount,
+        });
     }
   }
 
   private grantAnniversaryReward(playerId: string, rewardType: "login" | "quest" | "boss") {
     const p = this.state.players.get(playerId);
     if (!p) return;
-    
+
     let reward;
     switch (rewardType) {
       case "login":
@@ -433,15 +466,17 @@ export class GameRoom extends Room<WorldState> {
         reward = ANNIVERSARY_REWARDS.find(r => r.id === "boss_slayer");
         break;
     }
-    
+
     if (reward && !p.unlockedRewards.includes(reward.id)) {
       p.unlockedRewards.push(reward.id);
       p.anniversaryParticipated = true;
-      
-      this.clients.find(c => c.sessionId === playerId)?.send("anniversary:reward", {
-        reward: reward,
-        message: `Anniversary reward unlocked: ${reward.name}!`
-      });
+
+      this.clients
+        .find(c => c.sessionId === playerId)
+        ?.send("anniversary:reward", {
+          reward: reward,
+          message: `Anniversary reward unlocked: ${reward.name}!`,
+        });
     }
   }
 }
@@ -463,4 +498,6 @@ function sanitizeChat(s: string): string | null {
   return s;
 }
 
-function clamp(n: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, n)); }
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n));
+}

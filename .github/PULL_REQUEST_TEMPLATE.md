@@ -17,4 +17,3 @@
 - [ ] Verified client connects to local server
 - [ ] Included before/after screenshots for visual changes
 - [ ] No secrets or credentials committed
-

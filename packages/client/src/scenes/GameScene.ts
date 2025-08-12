@@ -1,13 +1,33 @@
 import Phaser from "phaser";
 import { createClient } from "../net";
-import { TILE_SIZE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS } from "@toodee/shared";
+import {
+  TILE_SIZE,
+  MAP,
+  ChatMessage,
+  NPC_MERCHANT,
+  SHOP_ITEMS,
+  FounderTier,
+  FOUNDER_REWARDS,
+} from "@toodee/shared";
 
-type ServerPlayer = { id: string; x: number; y: number; dir: number; founderTier?: string; displayTitle?: string; chatColor?: string; unlockedRewards?: string[]; };
+type ServerPlayer = {
+  id: string;
+  x: number;
+  y: number;
+  dir: number;
+  founderTier?: string;
+  displayTitle?: string;
+  chatColor?: string;
+  unlockedRewards?: string[];
+};
 
 export class GameScene extends Phaser.Scene {
   private room?: any;
   private players = new Map<string, Phaser.GameObjects.Rectangle>();
-  private mobs = new Map<string, { body: Phaser.GameObjects.Rectangle; hp: Phaser.GameObjects.Rectangle }>();
+  private mobs = new Map<
+    string,
+    { body: Phaser.GameObjects.Rectangle; hp: Phaser.GameObjects.Rectangle }
+  >();
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private seq = 0;
@@ -23,7 +43,9 @@ export class GameScene extends Phaser.Scene {
   private splashImage?: Phaser.GameObjects.Image;
   private toastRoot?: HTMLDivElement;
 
-  constructor() { super("game"); }
+  constructor() {
+    super("game");
+  }
 
   preload() {
     // Asset lives in client/public so it’s served at root
@@ -39,9 +61,12 @@ export class GameScene extends Phaser.Scene {
     this.drawMap();
 
     // Show splash immediately
-    this.splashImage = this.add.image(this.scale.width / 2, this.scale.height / 2, "__splash__").setScrollFactor(0).setDepth(1000);
+    this.splashImage = this.add
+      .image(this.scale.width / 2, this.scale.height / 2, "__splash__")
+      .setScrollFactor(0)
+      .setDepth(1000);
     this.splashImage.setOrigin(0.5);
-    
+
     try {
       const { connectWithRetry } = await import("../net");
       this.room = await connectWithRetry(3, 1000);
@@ -53,7 +78,9 @@ export class GameScene extends Phaser.Scene {
 
     // listen to state changes
     this.room.state.players.onAdd = (p: ServerPlayer, key: string) => {
-      const r = this.add.rectangle(p.x * TILE_SIZE, p.y * TILE_SIZE, TILE_SIZE, TILE_SIZE, 0x8ad7ff).setOrigin(0.5);
+      const r = this.add
+        .rectangle(p.x * TILE_SIZE, p.y * TILE_SIZE, TILE_SIZE, TILE_SIZE, 0x8ad7ff)
+        .setOrigin(0.5);
       r.setStrokeStyle(2, 0x001b2e);
       this.players.set(key, r);
       if (!this.cameraTarget && key === this.room.sessionId) {
@@ -63,9 +90,15 @@ export class GameScene extends Phaser.Scene {
         const w = MAP.width * TILE_SIZE;
         const h = MAP.height * TILE_SIZE;
         this.cameras.main.setBounds(0, 0, w, h, true);
-        this.hpText = this.add.text(12, 12, "HP", { color: "#e6f3ff", fontFamily: "monospace", fontSize: "12px" }).setScrollFactor(0);
-        this.goldText = this.add.text(12, 28, "Gold", { color: "#ffd66b", fontFamily: "monospace", fontSize: "12px" }).setScrollFactor(0);
-        this.titleText = this.add.text(12, 44, "", { color: "#FFD700", fontFamily: "monospace", fontSize: "11px" }).setScrollFactor(0);
+        this.hpText = this.add
+          .text(12, 12, "HP", { color: "#e6f3ff", fontFamily: "monospace", fontSize: "12px" })
+          .setScrollFactor(0);
+        this.goldText = this.add
+          .text(12, 28, "Gold", { color: "#ffd66b", fontFamily: "monospace", fontSize: "12px" })
+          .setScrollFactor(0);
+        this.titleText = this.add
+          .text(12, 44, "", { color: "#FFD700", fontFamily: "monospace", fontSize: "11px" })
+          .setScrollFactor(0);
       }
     };
     this.room.state.players.onRemove = (_: any, key: string) => {
@@ -83,7 +116,7 @@ export class GameScene extends Phaser.Scene {
         const maxHp = p.maxHp ?? 0;
         this.hpText?.setText(`HP ${hp}/${maxHp}`);
         if (this.goldText && typeof p.gold === "number") this.goldText.setText(`Gold ${p.gold}`);
-        
+
         // Update founder title display
         if (this.titleText && p.displayTitle) {
           this.titleText.setText(p.displayTitle);
@@ -93,9 +126,13 @@ export class GameScene extends Phaser.Scene {
 
     // mobs
     this.room.state.mobs?.onAdd?.((m: any, key: string) => {
-      const body = this.add.rectangle(m.x * TILE_SIZE, m.y * TILE_SIZE, TILE_SIZE, TILE_SIZE, 0xd46a6a).setOrigin(0.5);
+      const body = this.add
+        .rectangle(m.x * TILE_SIZE, m.y * TILE_SIZE, TILE_SIZE, TILE_SIZE, 0xd46a6a)
+        .setOrigin(0.5);
       body.setStrokeStyle(2, 0x2a0f0f);
-      const hp = this.add.rectangle(m.x * TILE_SIZE, m.y * TILE_SIZE - TILE_SIZE * 0.6, TILE_SIZE, 4, 0x6be06b).setOrigin(0.5, 0.5);
+      const hp = this.add
+        .rectangle(m.x * TILE_SIZE, m.y * TILE_SIZE - TILE_SIZE * 0.6, TILE_SIZE, 4, 0x6be06b)
+        .setOrigin(0.5, 0.5);
       this.mobs.set(key, { body, hp });
     });
     this.room.state.mobs?.onRemove?.((_: any, key: string) => {
@@ -133,7 +170,7 @@ export class GameScene extends Phaser.Scene {
     keyE.on("down", () => this.tryOpenShop());
     this.room.onMessage("shop:list", (payload: any) => this.showShop(payload));
     this.room.onMessage("shop:result", (payload: any) => this.updateShopResult(payload));
-    
+
     // rewards system
     const keyR = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     keyR.on("down", () => this.toggleRewards());
@@ -143,11 +180,18 @@ export class GameScene extends Phaser.Scene {
     keyF.on("down", () => this.promptReferral());
     this.room.onMessage("bug_report:result", (payload: any) => this.handleBugReportResult(payload));
     this.room.onMessage("referral:result", (payload: any) => this.handleReferralResult(payload));
-    this.room.onMessage("anniversary:reward", (payload: any) => this.handleAnniversaryReward(payload));
+    this.room.onMessage("anniversary:reward", (payload: any) =>
+      this.handleAnniversaryReward(payload)
+    );
 
     // Fade out splash and show connected toast
     if (this.splashImage) {
-      this.tweens.add({ targets: this.splashImage, duration: 600, alpha: 0, onComplete: () => this.splashImage?.destroy() });
+      this.tweens.add({
+        targets: this.splashImage,
+        duration: 600,
+        alpha: 0,
+        onComplete: () => this.splashImage?.destroy(),
+      });
     }
     this.showToast("Connected to server", "ok");
   }
@@ -155,22 +199,32 @@ export class GameScene extends Phaser.Scene {
   private drawMap() {
     const g = this.mapLayer;
     g.clear();
-    const w = MAP.width, h = MAP.height;
-    const colorWater = 0x10334a, colorLand = 0x2e4031, colorRock = 0x474b49;
+    const w = MAP.width,
+      h = MAP.height;
+    const colorWater = 0x10334a,
+      colorLand = 0x2e4031,
+      colorRock = 0x474b49;
 
     // World bg
     g.fillStyle(0x0b0b12, 1);
     g.fillRect(-5000, -5000, 10000, 10000);
 
     // Elliptical "mitten" + thumb (visual, not collision)
-    const cx = Math.floor(w * 0.45), cy = Math.floor(h * 0.55);
-    const rx = Math.floor(w * 0.28), ry = Math.floor(h * 0.32);
+    const cx = Math.floor(w * 0.45),
+      cy = Math.floor(h * 0.55);
+    const rx = Math.floor(w * 0.28),
+      ry = Math.floor(h * 0.32);
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const nx = (x - cx) / rx;
         const ny = (y - cy) / ry;
-        let land = (nx * nx + ny * ny) <= 1.0;
-        if (x > Math.floor(w * 0.60) && x < Math.floor(w * 0.70) && y > Math.floor(h * 0.45) && y < Math.floor(h * 0.70)) {
+        let land = nx * nx + ny * ny <= 1.0;
+        if (
+          x > Math.floor(w * 0.6) &&
+          x < Math.floor(w * 0.7) &&
+          y > Math.floor(h * 0.45) &&
+          y < Math.floor(h * 0.7)
+        ) {
           land = true; // thumb
         }
         const color = land ? colorLand : colorWater;
@@ -181,7 +235,7 @@ export class GameScene extends Phaser.Scene {
 
     // sprinkle rocks visually
     g.lineStyle(0, 0, 0);
-    for (let i = 0; i < (w * h * 0.03); i++) {
+    for (let i = 0; i < w * h * 0.03; i++) {
       const x = Math.floor(Math.random() * w);
       const y = Math.floor(Math.random() * h);
       g.fillStyle(colorRock, 1);
@@ -203,7 +257,7 @@ export class GameScene extends Phaser.Scene {
       x: Math.round(me.x ?? 0),
       y: Math.round(me.y ?? 0),
       gold: me.gold ?? 0,
-      pots: me.pots ?? 0
+      pots: me.pots ?? 0,
     };
     localStorage.setItem("toodee_save", JSON.stringify(snap));
   }
@@ -235,7 +289,7 @@ export class GameScene extends Phaser.Scene {
       borderRadius: "8px",
       color: "#e6f3ff",
       padding: "10px",
-      zIndex: 12 as any
+      zIndex: 12 as any,
     });
     const title = document.createElement("div");
     title.textContent = "Merchant";
@@ -257,7 +311,15 @@ export class GameScene extends Phaser.Scene {
     const buy5 = document.createElement("button");
     buy5.textContent = "Buy 5";
     [buy1, buy5].forEach(b => {
-      Object.assign(b.style, { marginRight: "6px", padding: "4px 8px", background: "#17324c", color: "#e6f3ff", border: "1px solid #406080", borderRadius: "4px", cursor: "pointer" });
+      Object.assign(b.style, {
+        marginRight: "6px",
+        padding: "4px 8px",
+        background: "#17324c",
+        color: "#e6f3ff",
+        border: "1px solid #406080",
+        borderRadius: "4px",
+        cursor: "pointer",
+      });
       root.appendChild(b);
     });
     const close = document.createElement("button");
@@ -297,7 +359,7 @@ export class GameScene extends Phaser.Scene {
         flexDirection: "column",
         gap: "8px",
         zIndex: 15 as any,
-        pointerEvents: "none"
+        pointerEvents: "none",
       });
       document.body.appendChild(root);
       this.toastRoot = root;
@@ -316,7 +378,7 @@ export class GameScene extends Phaser.Scene {
       boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
       opacity: "0",
       transform: "translateY(-6px)",
-      transition: "opacity 180ms ease, transform 180ms ease"
+      transition: "opacity 180ms ease, transform 180ms ease",
     } as any);
     el.textContent = text;
     this.toastRoot!.appendChild(el);
@@ -354,7 +416,7 @@ export class GameScene extends Phaser.Scene {
       fontSize: "12px",
       lineHeight: "1.3",
       pointerEvents: "auto",
-      zIndex: 10 as any
+      zIndex: 10 as any,
     });
 
     const log = document.createElement("div");
@@ -364,7 +426,7 @@ export class GameScene extends Phaser.Scene {
       borderRadius: "6px 6px 0 0",
       padding: "6px 8px",
       maxHeight: "160px",
-      overflowY: "auto"
+      overflowY: "auto",
     });
 
     const input = document.createElement("input");
@@ -376,10 +438,10 @@ export class GameScene extends Phaser.Scene {
       color: "#e6f3ff",
       padding: "6px 8px",
       outline: "none",
-      borderRadius: "0 0 6px 6px"
+      borderRadius: "0 0 6px 6px",
     });
     input.placeholder = "Press Enter to chat…";
-    input.addEventListener("keydown", (e) => {
+    input.addEventListener("keydown", e => {
       if (e.key === "Enter") {
         const text = input.value.trim();
         if (text) {
@@ -410,13 +472,13 @@ export class GameScene extends Phaser.Scene {
     const line = document.createElement("div");
     const time = new Date(msg.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     line.textContent = `[${time}] ${msg.from}: ${msg.text}`;
-    
+
     // Apply special chat colors for founder rewards
     const player = this.room?.state.players.get(this.room.sessionId);
     if (player && player.chatColor && player.chatColor !== "#FFFFFF") {
       line.style.color = player.chatColor;
     }
-    
+
     this.chatLogEl.appendChild(line);
     // trim
     while (this.chatLogEl.childElementCount > 50) {
@@ -431,10 +493,10 @@ export class GameScene extends Phaser.Scene {
       this.rewardsEl = undefined;
       return;
     }
-    
+
     const me = this.room?.state.players.get(this.room.sessionId);
     if (!me) return;
-    
+
     const root = document.createElement("div");
     Object.assign(root.style, {
       position: "absolute",
@@ -449,9 +511,9 @@ export class GameScene extends Phaser.Scene {
       color: "#e6f3ff",
       padding: "16px",
       zIndex: 20 as any,
-      overflowY: "auto"
+      overflowY: "auto",
     });
-    
+
     const title = document.createElement("div");
     title.textContent = "🏆 Founder Rewards";
     title.style.fontWeight = "bold";
@@ -459,18 +521,18 @@ export class GameScene extends Phaser.Scene {
     title.style.marginBottom = "12px";
     title.style.textAlign = "center";
     root.appendChild(title);
-    
+
     const tierName = me.founderTier || "none";
     const tierEl = document.createElement("div");
     let tierDisplay = "None";
     if (tierName === FounderTier.EarlyBird) tierDisplay = "👑 Early Bird";
     else if (tierName === FounderTier.BetaTester) tierDisplay = "🚀 Beta Tester";
     else if (tierName === FounderTier.BugHunter) tierDisplay = "🐛 Bug Hunter";
-    
+
     tierEl.innerHTML = `<strong>Founder Tier:</strong> ${tierDisplay}`;
     tierEl.style.marginBottom = "12px";
     root.appendChild(tierEl);
-    
+
     // Show unlocked rewards
     if (me.unlockedRewards && me.unlockedRewards.length > 0) {
       const rewardsTitle = document.createElement("div");
@@ -478,7 +540,7 @@ export class GameScene extends Phaser.Scene {
       rewardsTitle.style.fontWeight = "bold";
       rewardsTitle.style.marginBottom = "8px";
       root.appendChild(rewardsTitle);
-      
+
       me.unlockedRewards.forEach((rewardId: string) => {
         // Find reward in all tiers
         let reward;
@@ -486,7 +548,7 @@ export class GameScene extends Phaser.Scene {
           reward = FOUNDER_REWARDS[tier].find(r => r.id === rewardId);
           if (reward) break;
         }
-        
+
         if (reward) {
           const rewardEl = document.createElement("div");
           rewardEl.innerHTML = `${reward.icon || "⭐"} <strong>${reward.name}</strong><br><span style="font-size: 11px; opacity: 0.8;">${reward.description}</span>`;
@@ -498,7 +560,7 @@ export class GameScene extends Phaser.Scene {
         }
       });
     }
-    
+
     // Add controls hint
     const controls = document.createElement("div");
     controls.innerHTML = `<br><strong>Controls:</strong><br>
@@ -510,7 +572,7 @@ export class GameScene extends Phaser.Scene {
     controls.style.opacity = "0.7";
     controls.style.marginTop = "12px";
     root.appendChild(controls);
-    
+
     const close = document.createElement("button");
     close.textContent = "Close";
     Object.assign(close.style, {
@@ -522,18 +584,18 @@ export class GameScene extends Phaser.Scene {
       color: "#e6f3ff",
       border: "1px solid #406080",
       borderRadius: "4px",
-      cursor: "pointer"
+      cursor: "pointer",
     });
     close.onclick = () => {
       root.remove();
       this.rewardsEl = undefined;
     };
     root.appendChild(close);
-    
+
     document.body.appendChild(root);
     this.rewardsEl = root;
   }
-  
+
   private handleBugReportResult(payload: any) {
     if (payload.ok) {
       this.showToast(`Bug report submitted! (${payload.reportsCount}/5)`, "ok");
@@ -544,7 +606,7 @@ export class GameScene extends Phaser.Scene {
       this.showToast(payload.reason, "error");
     }
   }
-  
+
   private handleReferralResult(payload: any) {
     if (payload.ok) {
       const msg = `Referral added! Count: ${payload.referralsCount}`;
@@ -556,7 +618,7 @@ export class GameScene extends Phaser.Scene {
       this.showToast(payload.reason, "error");
     }
   }
-  
+
   private handleAnniversaryReward(payload: any) {
     if (payload.reward) {
       this.showToast(`${payload.message}`, "ok");
@@ -584,9 +646,9 @@ export class GameScene extends Phaser.Scene {
 }
 
 function randomName() {
-  const a = ["Bold", "Swift", "Calm", "Brave", "Merry", "Quiet", "Wry", "Keen"]; 
-  const b = ["Fox", "Owl", "Pine", "Fawn", "Peak", "Finch", "Wolf", "Reed"]; 
-  return `${a[Math.floor(Math.random()*a.length)]}${b[Math.floor(Math.random()*b.length)]}`;
+  const a = ["Bold", "Swift", "Calm", "Brave", "Merry", "Quiet", "Wry", "Keen"];
+  const b = ["Fox", "Owl", "Pine", "Fawn", "Peak", "Finch", "Wolf", "Reed"];
+  return `${a[Math.floor(Math.random() * a.length)]}${b[Math.floor(Math.random() * b.length)]}`;
 }
 
 function loadSave(): any | null {

@@ -1,5 +1,5 @@
-import { Scene, GameObjects } from 'phaser';
-import { TILE_SIZE } from '@toodee/shared';
+import { Scene, GameObjects } from "phaser";
+import { TILE_SIZE } from "@toodee/shared";
 
 export class Character {
   private scene: Scene;
@@ -7,7 +7,7 @@ export class Character {
   private nameText: GameObjects.Text;
   private hpBar: GameObjects.Graphics;
   private hpBarBg: GameObjects.Graphics;
-  private lastDirection: string = 'down';
+  private lastDirection: string = "down";
   private isMoving: boolean = false;
   private shadowSprite?: GameObjects.Ellipse;
 
@@ -23,7 +23,7 @@ export class Character {
     x: number,
     y: number,
     name: string,
-    spriteKey: string = 'player',
+    spriteKey: string = "player",
     isLocalPlayer: boolean = false
   ) {
     this.scene = scene;
@@ -44,13 +44,13 @@ export class Character {
     // Create sprite
     this.sprite = scene.add.sprite(x * TILE_SIZE, y * TILE_SIZE, spriteKey);
     this.sprite.setOrigin(0.5, 0.7);
-    
+
     // Create name text
     this.nameText = scene.add.text(x * TILE_SIZE, y * TILE_SIZE - 20, name, {
-      fontSize: '12px',
-      color: isLocalPlayer ? '#ffff00' : '#ffffff',
-      stroke: '#000000',
-      strokeThickness: 2
+      fontSize: "12px",
+      color: isLocalPlayer ? "#ffff00" : "#ffffff",
+      stroke: "#000000",
+      strokeThickness: 2,
     });
     this.nameText.setOrigin(0.5, 1);
 
@@ -71,7 +71,7 @@ export class Character {
     this.nameText.setDepth(3);
 
     // Start with idle animation
-    this.playAnimation('idle_down');
+    this.playAnimation("idle_down");
   }
 
   setPosition(x: number, y: number, smooth: boolean = true) {
@@ -86,9 +86,9 @@ export class Character {
       this.scene.tweens.add({
         targets: [this.sprite, this.shadowSprite],
         x: targetX,
-        y: { 
+        y: {
           value: targetY,
-          ease: 'Linear'
+          ease: "Linear",
         },
         duration: 100,
         onUpdate: () => {
@@ -96,7 +96,7 @@ export class Character {
           if (this.shadowSprite) {
             this.shadowSprite.y = this.sprite.y + 4;
           }
-        }
+        },
       });
     } else {
       this.sprite.setPosition(targetX, targetY);
@@ -108,14 +108,14 @@ export class Character {
   }
 
   updateMovement(direction: number | null, isMoving: boolean) {
-    const dirMap = ['up', 'right', 'down', 'left'];
-    
+    const dirMap = ["up", "right", "down", "left"];
+
     if (direction !== null && direction >= 0 && direction < 4) {
       this.lastDirection = dirMap[direction];
     }
 
     this.isMoving = isMoving;
-    
+
     if (isMoving && direction !== null) {
       this.playAnimation(`walk_${this.lastDirection}`);
     } else {
@@ -125,23 +125,23 @@ export class Character {
 
   private playAnimation(key: string) {
     const animKey = `${this.sprite.texture.key}_${key}`;
-    
+
     if (this.scene.anims.exists(animKey)) {
       this.sprite.play(animKey, true);
     } else {
       // Fallback to static frame if animation doesn't exist
       const frameMap: { [key: string]: number } = {
-        'idle_down': 0,
-        'idle_left': 4,
-        'idle_right': 8,
-        'idle_up': 12,
-        'walk_down': 1,
-        'walk_left': 5,
-        'walk_right': 9,
-        'walk_up': 13
+        idle_down: 0,
+        idle_left: 4,
+        idle_right: 8,
+        idle_up: 12,
+        walk_down: 1,
+        walk_left: 5,
+        walk_right: 9,
+        walk_up: 13,
       };
-      
-      const frame = frameMap[key.replace(`${this.sprite.texture.key}_`, '')] ?? 0;
+
+      const frame = frameMap[key.replace(`${this.sprite.texture.key}_`, "")] ?? 0;
       this.sprite.setFrame(frame);
     }
   }
@@ -154,10 +154,10 @@ export class Character {
 
   private updateHpBar() {
     this.hpBar.clear();
-    
+
     const hpPercent = Math.max(0, Math.min(1, this.hp / this.maxHp));
     const barWidth = Math.floor(32 * hpPercent);
-    
+
     // Choose color based on HP percentage
     let color = 0x00ff00; // Green
     if (hpPercent < 0.3) {
@@ -165,7 +165,7 @@ export class Character {
     } else if (hpPercent < 0.6) {
       color = 0xffaa00; // Orange
     }
-    
+
     this.hpBar.fillStyle(color, 1);
     this.hpBar.fillRect(-16, -25, barWidth, 4);
   }
@@ -180,18 +180,13 @@ export class Character {
   }
 
   showDamage(amount: number) {
-    const damageText = this.scene.add.text(
-      this.sprite.x,
-      this.sprite.y - 30,
-      `-${amount}`,
-      {
-        fontSize: '18px',
-        color: '#ff0000',
-        stroke: '#000000',
-        strokeThickness: 2,
-        fontStyle: 'bold'
-      }
-    );
+    const damageText = this.scene.add.text(this.sprite.x, this.sprite.y - 30, `-${amount}`, {
+      fontSize: "18px",
+      color: "#ff0000",
+      stroke: "#000000",
+      strokeThickness: 2,
+      fontStyle: "bold",
+    });
     damageText.setOrigin(0.5, 0.5);
     damageText.setDepth(10);
 
@@ -200,10 +195,10 @@ export class Character {
       y: damageText.y - 30,
       alpha: 0,
       duration: 1000,
-      ease: 'Power2',
+      ease: "Power2",
       onComplete: () => {
         damageText.destroy();
-      }
+      },
     });
   }
 

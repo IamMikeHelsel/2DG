@@ -2,7 +2,7 @@ export const TILE_SIZE = 32;
 export const TICK_RATE = 20; // server ticks per second
 export const MAX_PLAYERS_PER_ROOM = 80;
 
-export type Direction = 'up' | 'down' | 'left' | 'right';
+export type Direction = "up" | "down" | "left" | "right";
 
 export interface InputMessage {
   seq: number;
@@ -22,13 +22,13 @@ export interface PositionSnapshot {
 
 export const MAP = {
   width: 96,
-  height: 96
+  height: 96,
 };
 
 export enum Tile {
   Water = 0,
   Land = 1,
-  Rock = 2
+  Rock = 2,
 }
 
 // Chat
@@ -45,22 +45,20 @@ export interface ShopItem {
   price: number; // gold
 }
 
-export const SHOP_ITEMS: ShopItem[] = [
-  { id: "pot_small", name: "Small Potion", price: 5 }
-];
+export const SHOP_ITEMS: ShopItem[] = [{ id: "pot_small", name: "Small Potion", price: 5 }];
 
 // Merchant position (tile coords) near spawn
 export const NPC_MERCHANT = {
   x: Math.floor(MAP.width * 0.45) + 2,
-  y: Math.floor(MAP.height * 0.55)
+  y: Math.floor(MAP.height * 0.55),
 };
 
 // Founder Rewards System
 export enum FounderTier {
   None = "none",
-  EarlyBird = "early_bird", 
+  EarlyBird = "early_bird",
   BetaTester = "beta_tester",
-  BugHunter = "bug_hunter"
+  BugHunter = "bug_hunter",
 }
 
 export interface RewardItem {
@@ -74,20 +72,74 @@ export interface RewardItem {
 export const FOUNDER_REWARDS: Record<FounderTier, RewardItem[]> = {
   [FounderTier.None]: [],
   [FounderTier.EarlyBird]: [
-    { id: "golden_torch", name: "Golden Torch", description: "A shimmering torch for early supporters", type: "cosmetic", icon: "🔥" },
-    { id: "founder_badge", name: "Founder Badge", description: "Founding member recognition", type: "title", icon: "👑" },
-    { id: "monument_name", name: "Monument Inscription", description: "Your name on the town monument", type: "title", icon: "🏛️" }
+    {
+      id: "golden_torch",
+      name: "Golden Torch",
+      description: "A shimmering torch for early supporters",
+      type: "cosmetic",
+      icon: "🔥",
+    },
+    {
+      id: "founder_badge",
+      name: "Founder Badge",
+      description: "Founding member recognition",
+      type: "title",
+      icon: "👑",
+    },
+    {
+      id: "monument_name",
+      name: "Monument Inscription",
+      description: "Your name on the town monument",
+      type: "title",
+      icon: "🏛️",
+    },
   ],
   [FounderTier.BetaTester]: [
-    { id: "pet_companion", name: "Beta Pet", description: "Exclusive companion for beta testers", type: "pet", icon: "🐱" },
-    { id: "special_chat_color", name: "Beta Chat Color", description: "Special chat text color", type: "cosmetic", icon: "💬" },
-    { id: "early_access", name: "Early Access", description: "First access to new features", type: "access", icon: "🚀" }
+    {
+      id: "pet_companion",
+      name: "Beta Pet",
+      description: "Exclusive companion for beta testers",
+      type: "pet",
+      icon: "🐱",
+    },
+    {
+      id: "special_chat_color",
+      name: "Beta Chat Color",
+      description: "Special chat text color",
+      type: "cosmetic",
+      icon: "💬",
+    },
+    {
+      id: "early_access",
+      name: "Early Access",
+      description: "First access to new features",
+      type: "access",
+      icon: "🚀",
+    },
   ],
   [FounderTier.BugHunter]: [
-    { id: "bug_hunter_title", name: "Bug Hunter", description: "Recognized for finding and reporting bugs", type: "title", icon: "🐛" },
-    { id: "bug_hunter_emote", name: "Bug Hunter Emote", description: "Special emote for bug hunters", type: "emote", icon: "🕵️" },
-    { id: "premium_month", name: "Premium Month", description: "Free premium month at launch", type: "access", icon: "⭐" }
-  ]
+    {
+      id: "bug_hunter_title",
+      name: "Bug Hunter",
+      description: "Recognized for finding and reporting bugs",
+      type: "title",
+      icon: "🐛",
+    },
+    {
+      id: "bug_hunter_emote",
+      name: "Bug Hunter Emote",
+      description: "Special emote for bug hunters",
+      type: "emote",
+      icon: "🕵️",
+    },
+    {
+      id: "premium_month",
+      name: "Premium Month",
+      description: "Free premium month at launch",
+      type: "access",
+      icon: "⭐",
+    },
+  ],
 };
 
 export interface PlayerRewards {
@@ -100,15 +152,60 @@ export interface PlayerRewards {
 }
 
 export const REFERRAL_REWARDS = [
-  { referrals: 1, reward: { id: "vendor_discount", name: "Friend Discount", description: "10% discount at merchants", type: "discount" as const, icon: "💰" }},
-  { referrals: 3, reward: { id: "referral_emote", name: "Social Emote", description: "Exclusive referral emote", type: "emote" as const, icon: "🤝" }},
-  { referrals: 5, reward: { id: "referral_skin", name: "Social Skin", description: "Cosmetic skin for top recruiters", type: "cosmetic" as const, icon: "✨" }}
+  {
+    referrals: 1,
+    reward: {
+      id: "vendor_discount",
+      name: "Friend Discount",
+      description: "10% discount at merchants",
+      type: "discount" as const,
+      icon: "💰",
+    },
+  },
+  {
+    referrals: 3,
+    reward: {
+      id: "referral_emote",
+      name: "Social Emote",
+      description: "Exclusive referral emote",
+      type: "emote" as const,
+      icon: "🤝",
+    },
+  },
+  {
+    referrals: 5,
+    reward: {
+      id: "referral_skin",
+      name: "Social Skin",
+      description: "Cosmetic skin for top recruiters",
+      type: "cosmetic" as const,
+      icon: "✨",
+    },
+  },
 ];
 
 export const ANNIVERSARY_REWARDS: RewardItem[] = [
-  { id: "birthday_badge", name: "Anniversary Badge", description: "Commemorative anniversary badge", type: "title", icon: "🎂" },
-  { id: "birthday_quest_reward", name: "Birthday Quest Reward", description: "Special quest completion reward", type: "cosmetic", icon: "🎁" },
-  { id: "boss_slayer", name: "Anniversary Boss Slayer", description: "Defeated the anniversary boss", type: "title", icon: "⚔️" }
+  {
+    id: "birthday_badge",
+    name: "Anniversary Badge",
+    description: "Commemorative anniversary badge",
+    type: "title",
+    icon: "🎂",
+  },
+  {
+    id: "birthday_quest_reward",
+    name: "Birthday Quest Reward",
+    description: "Special quest completion reward",
+    type: "cosmetic",
+    icon: "🎁",
+  },
+  {
+    id: "boss_slayer",
+    name: "Anniversary Boss Slayer",
+    description: "Defeated the anniversary boss",
+    type: "title",
+    icon: "⚔️",
+  },
 ];
 
 // Reward tracking constants

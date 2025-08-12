@@ -9,7 +9,7 @@ export async function connectWithRetry(maxRetries = 3, retryDelay = 2000): Promi
   const client = createClient();
   const restore = loadSave();
   const name = restore?.name || randomName();
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`[Connection] Attempt ${attempt}/${maxRetries} to connect to server...`);
@@ -27,9 +27,9 @@ export async function connectWithRetry(maxRetries = 3, retryDelay = 2000): Promi
 }
 
 function randomName() {
-  const a = ["Bold", "Swift", "Calm", "Brave", "Merry", "Quiet", "Wry", "Keen"]; 
-  const b = ["Fox", "Owl", "Pine", "Fawn", "Peak", "Finch", "Wolf", "Reed"]; 
-  return `${a[Math.floor(Math.random()*a.length)]}${b[Math.floor(Math.random()*b.length)]}`;
+  const a = ["Bold", "Swift", "Calm", "Brave", "Merry", "Quiet", "Wry", "Keen"];
+  const b = ["Fox", "Owl", "Pine", "Fawn", "Peak", "Finch", "Wolf", "Reed"];
+  return `${a[Math.floor(Math.random() * a.length)]}${b[Math.floor(Math.random() * b.length)]}`;
 }
 
 function loadSave(): any | null {

@@ -1,0 +1,19 @@
+# Development Dockerfile with hot reloading
+FROM node:20-alpine as base
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+
+# Install dependencies
+COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages ./packages
+RUN pnpm i --no-frozen-lockfile
+
+# Server development target
+FROM base as server
+EXPOSE 2567
+CMD ["pnpm", "-F", "@toodee/server", "dev"]
+
+# Client development target  
+FROM base as client
+EXPOSE 5173
+CMD ["pnpm", "-F", "@toodee/client", "dev", "--host"]

@@ -8,7 +8,7 @@
 
 # 1) One‑page summary
 
-**Vision:** *Old‑school MMO feel with modern glow.* Think Tibia’s systems + Ori‑style atmosphere: crisp pixel art, dynamic lights, particles, and clean UX — all in the browser.
+**Vision:** _Old‑school MMO feel with modern glow._ Think Tibia’s systems + Ori‑style atmosphere: crisp pixel art, dynamic lights, particles, and clean UX — all in the browser.
 
 **Birthday slice (Aug 16, 2025):**
 
@@ -38,7 +38,7 @@
 # 3) Audience & positioning
 
 - **Audience:** 25–45yo MMO nostalgics + pixel‑art fans + webgame explorers.
-- **Positioning line:** *“Old‑school MMO, modern glow. Party up in your browser.”*
+- **Positioning line:** _“Old‑school MMO, modern glow. Party up in your browser.”_
 
 ---
 
@@ -269,21 +269,13 @@ PoT (2048), padding 4px, pair normal atlas names to base frames in manifest.
 
 **Networking**
 
--
+- **Persistence**
 
-**Persistence**
+- **UX**
 
--
+- **Ops**
 
-**UX**
-
--
-
-**Ops**
-
--
-
----
+- ***
 
 # 16) Retainers & Titles (post‑slice spec, brief)
 
@@ -316,4 +308,3 @@ PoT (2048), padding 4px, pair normal atlas names to base frames in manifest.
 - **Client hosting:** GitHub Pages (can switch to Vercel/Pages).
 - **Secrets:** `FLY_API_TOKEN`, `VITE_SERVER_URL=wss://toodeegame.fly.dev`.
 - **Local:** `pnpm --filter @toodee/server dev` + `pnpm --filter @toodee/client dev`.
-

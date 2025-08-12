@@ -1,0 +1,50 @@
+# Development Docker Compose
+# This file provides a complete development environment with hot reloading
+version: "3.9"
+
+services:
+  # Game Server
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: server
+    ports:
+      - "2567:2567"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=2567
+      - DEBUG=true
+    command: pnpm -F @toodee/server dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2567/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Game Client
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: client
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - VITE_SERVER_URL=ws://server:2567
+      - VITE_DEBUG=true
+    command: pnpm -F @toodee/client dev --host
+    depends_on:
+      - server
+    restart: unless-stopped
+
+networks:
+  default:
+    name: toodee-dev

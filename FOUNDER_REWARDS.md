@@ -39,6 +39,7 @@ The founder rewards system has been fully implemented with all requested feature
 ### 🎂 Anniversary Rewards
 
 System ready for anniversary events with rewards for:
+
 - Login during birthday week 🎂
 - Complete special quest 🎁
 - Defeat boss during event ⚔️
@@ -91,10 +92,10 @@ System ready for anniversary events with rewards for:
 // Automatic tier assignment
 private determineFounderTier(joinOrder: number, joinTimestamp: number): FounderTier {
   if (joinOrder <= EARLY_BIRD_LIMIT) return FounderTier.EarlyBird;
-  
+
   const daysSinceLaunch = (Date.now() - joinTimestamp) / (1000 * 60 * 60 * 24);
   if (daysSinceLaunch <= BETA_TEST_PERIOD_DAYS) return FounderTier.BetaTester;
-  
+
   return FounderTier.None;
 }
 
@@ -108,14 +109,17 @@ if (player.bugReports >= BUG_HUNTER_REPORTS_REQUIRED) {
 ## 🧪 Testing
 
 ### Automated Tests
+
 - Reward logic validation tests in `packages/server/tests/rewards.spec.ts`
 - All tests pass: tier assignment, bug tracking, referral counting
 
 ### Manual Testing
+
 - Run the demo script: `node packages/server/demo-rewards.mjs`
 - Shows complete reward system functionality with example scenarios
 
 ### Example Demo Output
+
 ```
 📅 Demo 1: Early Bird Player (Join #25)
 Player: EarlySupporter
@@ -148,6 +152,7 @@ The system is designed to be easily extensible:
 ## 🔄 Persistence
 
 The system uses the existing save/restore pattern from the original game:
+
 - Player reward state is included in the player schema
 - Colyseus automatically synchronizes reward data to clients
 - Local storage can be extended to include reward state for demo purposes

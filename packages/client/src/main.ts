@@ -14,9 +14,9 @@ const config: Phaser.Types.Core.GameConfig = {
   backgroundColor: "#0f0f13",
   physics: { default: "arcade" },
   scale: {
-    mode: Phaser.Scale.RESIZE
+    mode: Phaser.Scale.RESIZE,
   },
-  scene: useImproved ? [ImprovedGameScene] : [GameScene]
+  scene: useImproved ? [ImprovedGameScene] : [GameScene],
 };
 
 new Phaser.Game(config);

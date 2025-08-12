@@ -1,4 +1,4 @@
-import { Scene } from 'phaser';
+import { Scene } from "phaser";
 
 export interface MovementInput {
   up: boolean;
@@ -12,7 +12,7 @@ export class MovementSystem {
   private lastInput: MovementInput = { up: false, down: false, left: false, right: false };
   private inputBuffer: MovementInput[] = [];
   private diagonalFactor = 0.707; // Normalize diagonal movement
-  
+
   constructor(scene: Scene) {
     this.scene = scene;
   }
@@ -22,7 +22,7 @@ export class MovementSystem {
       up: cursors.up?.isDown || wasd.W?.isDown || false,
       down: cursors.down?.isDown || wasd.S?.isDown || false,
       left: cursors.left?.isDown || wasd.A?.isDown || false,
-      right: cursors.right?.isDown || wasd.D?.isDown || false
+      right: cursors.right?.isDown || wasd.D?.isDown || false,
     };
 
     // Cancel opposing directions
@@ -57,13 +57,13 @@ export class MovementSystem {
     if (input.right && !input.up && !input.down) return 1;
     if (input.down && !input.left && !input.right) return 2;
     if (input.left && !input.up && !input.down) return 3;
-    
+
     // Diagonal directions - prioritize most recent
     if (input.up && input.right) return this.lastInput.right ? 0 : 1;
     if (input.right && input.down) return this.lastInput.down ? 1 : 2;
     if (input.down && input.left) return this.lastInput.left ? 2 : 3;
     if (input.left && input.up) return this.lastInput.up ? 3 : 0;
-    
+
     return null;
   }
 
@@ -80,7 +80,7 @@ export class MovementSystem {
     const t = Math.min(1, lerpFactor * deltaTime * 60); // Normalize to 60fps
     return {
       x: current.x + (target.x - current.x) * t,
-      y: current.y + (target.y - current.y) * t
+      y: current.y + (target.y - current.y) * t,
     };
   }
 
@@ -106,7 +106,7 @@ export class MovementSystem {
 
     return {
       x: current.x + dx * speed * deltaTime,
-      y: current.y + dy * speed * deltaTime
+      y: current.y + dy * speed * deltaTime,
     };
   }
 

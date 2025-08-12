@@ -15,4 +15,3 @@ services:
       - server
     ports:
       - "5173:5173"
-

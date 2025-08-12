@@ -2,15 +2,15 @@ name: server
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - 'packages/server/**'
-      - 'packages/shared/**'
-      - 'Dockerfile'
-      - 'fly.toml'
-      - 'package.json'
-      - 'pnpm-workspace.yaml'
-      - 'tsconfig.base.json'
+      - "packages/server/**"
+      - "packages/shared/**"
+      - "Dockerfile"
+      - "fly.toml"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
   workflow_dispatch:
 
 jobs:
