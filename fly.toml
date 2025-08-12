@@ -1,9 +1,13 @@
-# Edit 'app' with your Fly app name (e.g., "toodeegame")
+# Toodeegame MMO Server Configuration
 app = "toodeegame"
-primary_region = "iad"
+primary_region = "ord"  # Chicago - central US location
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "Dockerfile.simple"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "2567"
 
 [http_service]
   internal_port = 2567
@@ -13,7 +17,30 @@ primary_region = "iad"
   min_machines_running = 1
   processes = ["app"]
 
+[[services]]
+  internal_port = 2567
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    
+  [[services.ports]]
+    port = 443
+    handlers = ["http", "tls"]
+
 [[services.tcp_checks]]
   interval = "10s"
   timeout = "2s"
   grace_period = "5s"
+  
+[deploy]
+  strategy = "rolling"
+  
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

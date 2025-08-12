@@ -1,5 +1,9 @@
 import Phaser from "phaser";
 import { GameScene } from "./scenes/GameScene";
+import { ImprovedGameScene } from "./scenes/ImprovedGameScene";
+
+// Use improved scene with character sprites and better terrain
+const useImproved = true;
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.WEBGL,
@@ -12,7 +16,7 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.RESIZE
   },
-  scene: [GameScene]
+  scene: useImproved ? [ImprovedGameScene] : [GameScene]
 };
 
 new Phaser.Game(config);

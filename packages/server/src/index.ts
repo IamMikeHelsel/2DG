@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import colyseus from "colyseus";
 import { createServer } from "http";
-import { GameRoom } from "./room.js";
+import { GameRoom } from "./room";
 
 const { Server } = colyseus;
 
