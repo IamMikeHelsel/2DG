@@ -2,6 +2,9 @@ import Phaser from "phaser";
 import { createClient } from "../net";
 import { TILE_SIZE, MAP, ChatMessage } from "@toodee/shared";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
+import { AssetLoader } from "../assets/AssetLoader";
+import { AudioManager } from "../systems/audio/AudioManager";
+import { VolumeControlUI } from "../ui/VolumeControlUI";
 
 type ServerPlayer = { 
   id: string; 
@@ -36,6 +39,12 @@ export class ImprovedGameScene extends Phaser.Scene {
   private toastRoot?: HTMLDivElement;
   private terrainMap: number[][] = [];
 
+  // Audio system
+  private audioManager?: AudioManager;
+  private volumeControlUI?: VolumeControlUI;
+  private lastFootstepTime = 0;
+  private footstepInterval = 400; // ms between footsteps
+
   // Client-side prediction variables
   private predictedPosition = { x: 0, y: 0 };
   private inputHistory: Array<{ seq: number; up: boolean; down: boolean; left: boolean; right: boolean; timestamp: number }> = [];
@@ -49,6 +58,10 @@ export class ImprovedGameScene extends Phaser.Scene {
   preload() {
     this.load.image("splash", "/toodeegame_splash.png");
     
+    // Load audio assets
+    const assetLoader = new AssetLoader(this);
+    assetLoader.loadAudio();
+    
     // Generate character sprites
     SpriteGenerator.generateCharacterSpritesheet(this, 'player', 0x3498db, 32);
     SpriteGenerator.generateCharacterSpritesheet(this, 'other_player', 0x9b59b6, 32);
@@ -59,6 +72,15 @@ export class ImprovedGameScene extends Phaser.Scene {
     this.cursors = this.input.keyboard!.createCursorKeys();
     // Remove WASD since we use chat
     this.keys = {} as any;
+
+    // Initialize audio system
+    this.audioManager = new AudioManager(this);
+    this.volumeControlUI = new VolumeControlUI(this.audioManager);
+
+    // Create keyboard shortcut for volume control (M key)
+    this.input.keyboard!.on('keydown-M', () => {
+      this.volumeControlUI?.toggle();
+    });
 
     // Create animation sets for sprites
     this.createAnimations();
@@ -331,7 +353,13 @@ export class ImprovedGameScene extends Phaser.Scene {
       });
     }
     
-    this.showToast("Connected!", "ok");
+    // Start background music
+    this.audioManager?.playMusic('town_theme');
+    
+    // Start ambient sounds
+    this.audioManager?.playAmbient('wind');
+    
+    this.showToast("Connected! Press 'M' for audio settings", "ok");
   }
 
   private createAnimations() {
@@ -544,6 +572,9 @@ export class ImprovedGameScene extends Phaser.Scene {
         // Apply client-side prediction
         if (up || down || left || right) {
           this.applyInputPrediction({ up, down, left, right }, 50 / 1000); // dt in seconds
+          
+          // Play footstep sounds
+          this.playFootstepSound();
         }
         
         // Send input if changed or if still moving
@@ -570,7 +601,10 @@ export class ImprovedGameScene extends Phaser.Scene {
 
     // Attack
     const space = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    space.on("down", () => this.room?.send("attack"));
+    space.on("down", () => {
+      this.audioManager?.playSFX('sword_swing');
+      this.room?.send("attack");
+    });
 
     // Shop
     const keyE = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E);
@@ -582,11 +616,14 @@ export class ImprovedGameScene extends Phaser.Scene {
   }
 
   private tryOpenShop() {
+    this.audioManager?.playUISound('click');
     this.room?.send("shop:list");
   }
 
   private toggleChat() {
     if (!this.chatInputEl) return;
+    
+    this.audioManager?.playUISound('click');
     
     if (this.chatInputEl.style.display === "none") {
       this.chatInputEl.style.display = "block";
@@ -728,6 +765,39 @@ export class ImprovedGameScene extends Phaser.Scene {
     }
   }
 
+  private playFootstepSound() {
+    const now = Date.now();
+    if (now - this.lastFootstepTime < this.footstepInterval) {
+      return; // Too soon for another footstep
+    }
+    
+    this.lastFootstepTime = now;
+    
+    // Determine terrain type based on player position
+    const playerX = Math.floor(this.predictedPosition.x);
+    const playerY = Math.floor(this.predictedPosition.y);
+    
+    let terrainType = 'grass'; // default
+    if (this.terrainMap[playerY] && this.terrainMap[playerY][playerX] !== undefined) {
+      const tileType = this.terrainMap[playerY][playerX];
+      switch (tileType) {
+        case 0: // Water
+          terrainType = 'water';
+          break;
+        case 1: // Land/grass
+          terrainType = 'grass';
+          break;
+        case 2: // Rock
+          terrainType = 'stone';
+          break;
+        default:
+          terrainType = 'grass';
+      }
+    }
+    
+    this.audioManager?.playFootstep(terrainType);
+  }
+
   private setupToasts() {
     this.toastRoot = document.createElement("div");
     Object.assign(this.toastRoot.style, {
@@ -740,6 +810,9 @@ export class ImprovedGameScene extends Phaser.Scene {
   }
 
   private showToast(message: string, type: "ok" | "error") {
+    // Play notification sound for toasts
+    this.audioManager?.playUISound('notification');
+    
     const toast = document.createElement("div");
     Object.assign(toast.style, {
       padding: "8px 16px",
