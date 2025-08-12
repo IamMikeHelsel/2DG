@@ -2,6 +2,8 @@ import { Room, Client } from "colyseus";
 import { WorldState, Player, Mob } from "./state";
 import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS } from "@toodee/shared";
 import { generateMichiganish, isWalkable, Grid } from "./map";
+import { persistenceService } from "./db/persistence";
+import { authService } from "./db/auth";
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
 
@@ -13,6 +15,11 @@ export class GameRoom extends Room<WorldState> {
   private attackCooldown = 400; // ms
   private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
   private joinCounter = 0;
+  
+  // Persistence tracking
+  private playerUserIds = new Map<string, string>(); // sessionId -> userId
+  private autoSaveInterval?: NodeJS.Timeout;
+  private autoSaveIntervalMs = 30000; // 30 seconds
 
   onCreate(options: any) {
     this.setPatchRate(1000 / 10); // send state ~10/s; interpolate on client
@@ -40,12 +47,26 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
 
     this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
+    
+    // Start auto-save timer if persistence is enabled
+    if (persistenceService.isReady()) {
+      this.startAutoSave();
+    }
   }
 
-  onJoin(client: Client, options: any) {
+  async onJoin(client: Client, options: any) {
+    // Extract user from options (auth)
+    const user = authService.extractUserFromOptions(options);
+    if (!user) {
+      console.error(`[Room] Failed to authenticate user for session ${client.sessionId}`);
+      throw new Error("Authentication required");
+    }
+    
+    this.playerUserIds.set(client.sessionId, user.id);
+    console.log(`[Room] User ${user.username} (${user.id}) joined as session ${client.sessionId}`);
+
     const p = new Player();
     p.id = client.sessionId;
-    p.name = options?.name || "Adventurer";
     p.maxHp = 100;
     p.hp = p.maxHp;
     p.gold = 20;
@@ -59,34 +80,92 @@ export class GameRoom extends Room<WorldState> {
     p.displayTitle = "";
     p.chatColor = "#FFFFFF";
     
-    // Determine founder tier
-    this.joinCounter++;
-    const founderTier = this.determineFounderTier(this.joinCounter, p.joinTimestamp);
-    p.founderTier = founderTier;
-    this.founderTracker.set(client.sessionId, { joinOrder: this.joinCounter, tier: founderTier });
+    // Try to load character from database
+    let characterName = options?.name || user.username || "Adventurer";
+    let loadedFromDB = false;
     
-    // Grant initial founder rewards
-    this.grantFounderRewards(p, founderTier);
-    
-    // spawn near center (or restore from client-provided snapshot for demo persistence)
-    const rx = options?.restore?.x, ry = options?.restore?.y;
-    if (typeof rx === "number" && typeof ry === "number") {
-      const tx = clamp(Math.round(rx), 0, MAP.width - 1);
-      const ty = clamp(Math.round(ry), 0, MAP.height - 1);
-      p.x = tx;
-      p.y = ty;
-    } else {
-      p.x = Math.floor(MAP.width * 0.45);
-      p.y = Math.floor(MAP.height * 0.55);
+    if (persistenceService.isReady()) {
+      try {
+        const character = await persistenceService.getOrCreateCharacter(user.id, characterName);
+        
+        if (character) {
+          // Load character data
+          p.name = character.name;
+          p.x = character.x;
+          p.y = character.y;
+          p.dir = character.dir;
+          p.hp = character.hp;
+          p.maxHp = character.max_hp;
+          p.gold = character.gold;
+          p.founderTier = character.founder_tier as FounderTier;
+          p.joinTimestamp = character.join_timestamp;
+          p.bugReports = character.bug_reports;
+          p.referralsCount = character.referrals_count;
+          p.anniversaryParticipated = character.anniversary_participated;
+          p.displayTitle = character.display_title;
+          p.chatColor = character.chat_color;
+          
+          // Load inventory (potions)
+          const inventory = await persistenceService.loadInventory(character.id);
+          p.pots = inventory.pots;
+          
+          loadedFromDB = true;
+          console.log(`[Room] Loaded character ${p.name} from database`);
+        }
+      } catch (error) {
+        console.error(`[Room] Failed to load character for user ${user.id}:`, error);
+      }
     }
-    if (typeof options?.restore?.gold === "number") p.gold = Math.max(0, Math.min(999999, Math.floor(options.restore.gold)));
-    if (typeof options?.restore?.pots === "number") p.pots = Math.max(0, Math.min(999, Math.floor(options.restore.pots)));
+    
+    // Fallback to client-provided restore data if DB load failed
+    if (!loadedFromDB) {
+      p.name = characterName;
+      
+      // Use client restore data if available (legacy system)
+      const rx = options?.restore?.x, ry = options?.restore?.y;
+      if (typeof rx === "number" && typeof ry === "number") {
+        const tx = clamp(Math.round(rx), 0, MAP.width - 1);
+        const ty = clamp(Math.round(ry), 0, MAP.height - 1);
+        p.x = tx;
+        p.y = ty;
+      } else {
+        p.x = Math.floor(MAP.width * 0.45);
+        p.y = Math.floor(MAP.height * 0.55);
+      }
+      
+      if (typeof options?.restore?.gold === "number") p.gold = Math.max(0, Math.min(999999, Math.floor(options.restore.gold)));
+      if (typeof options?.restore?.pots === "number") p.pots = Math.max(0, Math.min(999, Math.floor(options.restore.pots)));
+    }
+    
+    // Determine founder tier if not loaded from DB
+    if (!loadedFromDB) {
+      this.joinCounter++;
+      const founderTier = this.determineFounderTier(this.joinCounter, p.joinTimestamp);
+      p.founderTier = founderTier;
+      this.founderTracker.set(client.sessionId, { joinOrder: this.joinCounter, tier: founderTier });
+      
+      // Grant initial founder rewards
+      this.grantFounderRewards(p, founderTier);
+    }
+
     this.state.players.set(client.sessionId, p);
+    
+    // Save immediately after successful join if persistence is available
+    if (persistenceService.isReady()) {
+      this.savePlayerState(client.sessionId);
+    }
   }
 
-  onLeave(client: Client, consented: boolean) {
+  async onLeave(client: Client, consented: boolean) {
+    // Save player state before leaving
+    if (persistenceService.isReady()) {
+      await this.savePlayerState(client.sessionId);
+      console.log(`[Room] Saved player state on disconnect for session ${client.sessionId}`);
+    }
+    
     this.state.players.delete(client.sessionId);
     this.inputs.delete(client.sessionId);
+    this.playerUserIds.delete(client.sessionId);
   }
 
   update(dt: number) {
@@ -356,6 +435,68 @@ export class GameRoom extends Room<WorldState> {
         message: `Anniversary reward unlocked: ${reward.name}!`
       });
     }
+  }
+  
+  // Persistence methods
+  private startAutoSave() {
+    if (this.autoSaveInterval) {
+      clearInterval(this.autoSaveInterval);
+    }
+    
+    this.autoSaveInterval = setInterval(async () => {
+      await this.autoSaveAllPlayers();
+    }, this.autoSaveIntervalMs);
+    
+    console.log(`[Room] Auto-save started with ${this.autoSaveIntervalMs}ms interval`);
+  }
+  
+  private async autoSaveAllPlayers() {
+    if (!persistenceService.isReady()) {
+      return;
+    }
+    
+    const savePromises = Array.from(this.state.players.keys()).map(sessionId => 
+      this.savePlayerState(sessionId)
+    );
+    
+    try {
+      await Promise.all(savePromises);
+      console.log(`[Room] Auto-saved ${savePromises.length} players`);
+    } catch (error) {
+      console.error('[Room] Auto-save failed:', error);
+    }
+  }
+  
+  private async savePlayerState(sessionId: string): Promise<boolean> {
+    const player = this.state.players.get(sessionId);
+    const userId = this.playerUserIds.get(sessionId);
+    
+    if (!player || !userId || !persistenceService.isReady()) {
+      return false;
+    }
+    
+    try {
+      // Save character state
+      const saved = await persistenceService.saveCharacter(player, userId);
+      
+      if (saved && player.pots > 0) {
+        // Save inventory (potions) - we'd need character ID for this
+        // For now, we'll skip inventory saving as it requires more complex lookup
+      }
+      
+      return saved;
+    } catch (error) {
+      console.error(`[Room] Failed to save player ${sessionId}:`, error);
+      return false;
+    }
+  }
+  
+  onDispose() {
+    // Clean up auto-save timer
+    if (this.autoSaveInterval) {
+      clearInterval(this.autoSaveInterval);
+    }
+    console.log('[Room] Room disposed, auto-save stopped');
   }
 }
 
