@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { createClient } from "../net";
 import { TILE_SIZE, MAP, ChatMessage } from "@toodee/shared";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
+import { ClientAuth, loadLegacySave, saveLegacySave } from "../auth";
 
 type ServerPlayer = { 
   id: string; 
@@ -66,13 +67,29 @@ export class ImprovedGameScene extends Phaser.Scene {
     this.splashImage = this.add.image(this.scale.width / 2, this.scale.height / 2, "splash")
       .setScrollFactor(0).setDepth(1000);
 
-    // Connect to server
+    // Connect to server with authentication
     const client = createClient();
-    const restore = this.loadSave();
-    const name = restore?.name || this.randomName();
+    
+    // Get legacy save for backward compatibility
+    const legacySave = loadLegacySave();
+    
+    // Authenticate user
+    const auth = await ClientAuth.getOrCreateAuth(legacySave?.name);
+    
+    if (!auth) {
+      this.showToast("Failed to authenticate", "error");
+      return;
+    }
+    
+    console.log(`[Client] Authenticated as ${auth.username} (${auth.id})`);
     
     try {
-      this.room = await client.joinOrCreate("toodee", { name, restore });
+      // Connect with session token and legacy restore data
+      this.room = await client.joinOrCreate("toodee", { 
+        sessionToken: auth.sessionToken,
+        username: auth.username,
+        restore: legacySave // For backward compatibility
+      });
     } catch (err) {
       this.showToast("Cannot connect to server", "error");
       return;
@@ -682,25 +699,15 @@ export class ImprovedGameScene extends Phaser.Scene {
   }
 
   private saveSave(player: any) {
-    localStorage.setItem("toodee_save", JSON.stringify({
-      name: player.name,
-      x: player.x,
-      y: player.y
-    }));
+    // Save using legacy system for backup
+    saveLegacySave(player);
+    
+    // Note: With the new persistence system, saves happen automatically on the server
+    // This is kept for backward compatibility and offline fallback
   }
 
   private loadSave() {
-    try {
-      const save = localStorage.getItem("toodee_save");
-      return save ? JSON.parse(save) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  private randomName() {
-    const a = ["Bold", "Swift", "Calm", "Brave", "Merry"];
-    const b = ["Fox", "Owl", "Pine", "Fawn", "Wolf"];
-    return `${a[Math.floor(Math.random() * a.length)]}${b[Math.floor(Math.random() * b.length)]}`;
+    // Load from legacy system for backward compatibility
+    return loadLegacySave();
   }
 }
