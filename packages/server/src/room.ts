@@ -1,6 +1,6 @@
 import { Room, Client } from "colyseus";
-import { WorldState, Player, Mob } from "./state";
-import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS } from "@toodee/shared";
+import { WorldState, Player, Mob, DroppedItem, Projectile } from "./state";
+import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS, calculateLevelFromXp, getBaseStatsForLevel, DEFAULT_ITEMS, MOB_TEMPLATES, LOOT_TABLES, MobType, AIState, DamageType } from "@toodee/shared";
 import { generateMichiganish, isWalkable, Grid } from "./map";
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean };
@@ -46,10 +46,36 @@ export class GameRoom extends Room<WorldState> {
     const p = new Player();
     p.id = client.sessionId;
     p.name = options?.name || "Adventurer";
-    p.maxHp = 100;
+    
+    // Initialize progression system
+    p.level = 1;
+    p.totalXp = 0;
+    p.currentXp = 0;
+    p.xpToNext = 100;
+    
+    // Calculate base stats for level 1
+    const baseStats = getBaseStatsForLevel(1);
+    p.attack = baseStats.attack;
+    p.defense = baseStats.defense;
+    p.magicAttack = baseStats.magicAttack;
+    p.magicDefense = baseStats.magicDefense;
+    p.accuracy = baseStats.accuracy;
+    p.evasion = baseStats.evasion;
+    
+    p.maxHp = 50 + (p.level - 1) * 10; // Base HP scaling
     p.hp = p.maxHp;
-    p.gold = 20;
-    p.pots = 0;
+    p.gold = 50;
+    p.pots = 2;
+    
+    // Initialize equipment and inventory
+    p.weaponId = "";
+    p.armorId = "";
+    p.accessoryId = "";
+    p.inventory.set("health_potion", 3);
+    p.inventory.set("wooden_sword", 1);
+    
+    // Initialize zone
+    p.currentZone = "town";
     
     // Initialize founder rewards tracking
     p.joinTimestamp = Date.now();
@@ -79,9 +105,20 @@ export class GameRoom extends Room<WorldState> {
       p.x = Math.floor(MAP.width * 0.45);
       p.y = Math.floor(MAP.height * 0.55);
     }
-    if (typeof options?.restore?.gold === "number") p.gold = Math.max(0, Math.min(999999, Math.floor(options.restore.gold)));
-    if (typeof options?.restore?.pots === "number") p.pots = Math.max(0, Math.min(999, Math.floor(options.restore.pots)));
+    
+    // Restore progression if provided
+    if (options?.restore) {
+      if (typeof options.restore.gold === "number") p.gold = Math.max(0, Math.min(999999, Math.floor(options.restore.gold)));
+      if (typeof options.restore.pots === "number") p.pots = Math.max(0, Math.min(999, Math.floor(options.restore.pots)));
+      if (typeof options.restore.totalXp === "number") {
+        this.setPlayerXp(p, options.restore.totalXp);
+      }
+    }
+    
     this.state.players.set(client.sessionId, p);
+    
+    // Spawn some basic mobs for testing
+    this.initializeMobs();
   }
 
   onLeave(client: Client, consented: boolean) {
@@ -132,65 +169,111 @@ export class GameRoom extends Room<WorldState> {
     this.lastAttack.set(playerId, now);
 
     const attacker = this.state.players.get(playerId);
-    if (!attacker) return;
+    if (!attacker || attacker.hp <= 0) return;
 
     // Hit check: 1-tile arc in front, mobs first then players
     const front = neighbor(attacker.x, attacker.y, attacker.dir);
-    // Attack mobs
+    
+    // Attack mobs first
     let hitSomething = false;
-    this.state.mobs.forEach((m, key) => {
-      const mx = Math.round(m.x), my = Math.round(m.y);
-      if (mx === front.x && my === front.y && m.hp > 0 && !hitSomething) {
-        m.hp = Math.max(0, m.hp - 30);
+    this.state.mobs.forEach((mob, key) => {
+      const mx = Math.round(mob.x), my = Math.round(mob.y);
+      if (mx === front.x && my === front.y && mob.hp > 0 && !hitSomething) {
+        // Calculate damage based on attacker stats and mob defense
+        const template = MOB_TEMPLATES[mob.type as MobType];
+        if (!template) return;
+        
+        const levelMultiplier = 1 + (mob.level - 1) * 0.2;
+        const mobDefense = Math.floor(template.baseStats.defense * levelMultiplier);
+        
+        // Simple damage calculation: attack - defense, minimum 1
+        const rawDamage = attacker.attack - mobDefense;
+        const finalDamage = Math.max(1, Math.floor(rawDamage * (0.8 + Math.random() * 0.4))); // 20% variance
+        
+        mob.hp = Math.max(0, mob.hp - finalDamage);
         hitSomething = true;
-        if (m.hp === 0) {
-          // reward attacker
-          attacker.hp = Math.min(attacker.maxHp, attacker.hp + 10);
-          attacker.gold = Math.min(999999, attacker.gold + 10);
-          const id = key;
-          setTimeout(() => this.respawnMob(id), 2000);
+        
+        // Broadcast damage
+        this.broadcast("damage", {
+          targetId: mob.id,
+          damage: finalDamage,
+          targetType: "mob"
+        });
+        
+        if (mob.hp === 0) {
+          // Grant XP and potentially loot
+          this.grantXp(attacker, template.xpReward);
+          this.dropLoot(mob.x, mob.y, template.lootTableId, attacker.id);
+          
+          // Broadcast mob death
+          this.broadcast("mob_death", {
+            mobId: mob.id,
+            killerName: attacker.name
+          });
+          
+          const mobId = key;
+          setTimeout(() => this.respawnMob(mobId), 15000); // 15 second respawn
+        } else {
+          // Set mob target to attacker for AI
+          mob.targetPlayerId = attacker.id;
+          mob.aiState = AIState.Chasing;
         }
       }
     });
+    
     if (hitSomething) return;
 
-    // Then players
+    // Then attack other players (PvP)
     this.state.players.forEach((target, id) => {
-      if (id === playerId) return;
+      if (id === playerId || target.hp <= 0) return;
       const tx = Math.round(target.x);
       const ty = Math.round(target.y);
-      if (tx === front.x && ty === front.y && target.hp > 0) {
-        target.hp = Math.max(0, target.hp - 25);
+      if (tx === front.x && ty === front.y) {
+        // Calculate PvP damage (reduced compared to PvE)
+        const rawDamage = attacker.attack - target.defense;
+        const finalDamage = Math.max(5, Math.floor(rawDamage * 0.3 * (0.8 + Math.random() * 0.4))); // Much lower for PvP
+        
+        target.hp = Math.max(0, target.hp - finalDamage);
+        
+        // Broadcast PvP damage
+        this.broadcast("damage", {
+          targetId: target.id,
+          damage: finalDamage,
+          targetType: "player",
+          attackerName: attacker.name
+        });
+        
         if (target.hp === 0) {
-          // respawn at town center after short delay
-          const rid = id;
+          // Player death - respawn at town center after delay
+          const targetId = id;
           setTimeout(() => {
-            const t = this.state.players.get(rid);
+            const t = this.state.players.get(targetId);
             if (!t) return;
             t.x = Math.floor(MAP.width * 0.45);
             t.y = Math.floor(MAP.height * 0.55);
             t.hp = t.maxHp;
-          }, 1500);
+            t.currentZone = "town"; // Force back to town
+          }, 3000);
         }
       }
     });
   }
 
   private spawnMob(pos: { x: number; y: number }) {
-    const m = new Mob();
-    m.id = `mob_${Math.random().toString(36).slice(2, 8)}`;
-    m.x = pos.x;
-    m.y = pos.y;
-    m.maxHp = 60;
-    m.hp = m.maxHp;
-    this.state.mobs.set(m.id, m);
+    // Legacy method - now use spawnMobOfType with default slime
+    this.spawnMobOfType(pos.x, pos.y, MobType.Slime);
   }
 
   private respawnMob(id: string) {
-    const m = this.state.mobs.get(id);
-    if (!m) return;
-    // simple respawn at original spot
-    m.hp = m.maxHp;
+    const mob = this.state.mobs.get(id);
+    if (!mob) return;
+    
+    // Respawn with full health at original patrol center
+    mob.hp = mob.maxHp;
+    mob.x = mob.patrolCenterX;
+    mob.y = mob.patrolCenterY;
+    mob.aiState = AIState.Patrol;
+    mob.targetPlayerId = "";
   }
 
   private isNearMerchant(p: Player) {
@@ -356,6 +439,124 @@ export class GameRoom extends Room<WorldState> {
         message: `Anniversary reward unlocked: ${reward.name}!`
       });
     }
+  }
+
+  // XP/Level System Methods
+  private setPlayerXp(player: Player, totalXp: number) {
+    player.totalXp = totalXp;
+    const levelInfo = calculateLevelFromXp(totalXp);
+    
+    if (levelInfo.level > player.level) {
+      // Level up!
+      player.level = levelInfo.level;
+      this.recalculatePlayerStats(player);
+      
+      // Broadcast level up message
+      this.broadcast("level_up", {
+        playerId: player.id,
+        playerName: player.name,
+        newLevel: player.level
+      });
+    }
+    
+    player.currentXp = levelInfo.currentXp;
+    player.xpToNext = levelInfo.xpToNext;
+  }
+  
+  private grantXp(player: Player, xpAmount: number) {
+    this.setPlayerXp(player, player.totalXp + xpAmount);
+  }
+  
+  private recalculatePlayerStats(player: Player) {
+    const baseStats = getBaseStatsForLevel(player.level);
+    
+    // Apply base stats
+    player.attack = baseStats.attack;
+    player.defense = baseStats.defense;
+    player.magicAttack = baseStats.magicAttack;
+    player.magicDefense = baseStats.magicDefense;
+    player.accuracy = baseStats.accuracy;
+    player.evasion = baseStats.evasion;
+    
+    // Update HP (but keep current HP ratio)
+    const oldMaxHp = player.maxHp;
+    const hpRatio = player.hp / oldMaxHp;
+    player.maxHp = 50 + (player.level - 1) * 10;
+    
+    // TODO: Apply equipment bonuses here when equipment system is fully implemented
+    
+    // Restore HP if leveling up
+    if (player.maxHp > oldMaxHp) {
+      player.hp = Math.max(player.hp, player.hp + (player.maxHp - oldMaxHp));
+    }
+  }
+  
+  private initializeMobs() {
+    // Only spawn mobs if we don't have any
+    if (this.state.mobs.size > 0) return;
+    
+    // Spawn some basic mobs around the map
+    const mobSpawns = [
+      { x: MAP.width * 0.3, y: MAP.height * 0.3, type: MobType.Slime },
+      { x: MAP.width * 0.7, y: MAP.height * 0.3, type: MobType.Slime },
+      { x: MAP.width * 0.3, y: MAP.height * 0.7, type: MobType.Goblin },
+      { x: MAP.width * 0.7, y: MAP.height * 0.7, type: MobType.Wolf },
+    ];
+    
+    mobSpawns.forEach(spawn => {
+      this.spawnMobOfType(spawn.x, spawn.y, spawn.type);
+    });
+  }
+  
+  private spawnMobOfType(x: number, y: number, mobType: MobType, level: number = 1) {
+    const template = MOB_TEMPLATES[mobType];
+    if (!template) return;
+    
+    const mob = new Mob();
+    mob.id = `${mobType}_${Math.random().toString(36).slice(2, 8)}`;
+    mob.type = mobType;
+    mob.name = template.name;
+    mob.x = x;
+    mob.y = y;
+    mob.level = level;
+    
+    // Scale stats with level
+    const levelMultiplier = 1 + (level - 1) * 0.2;
+    mob.maxHp = Math.floor(template.baseHp * levelMultiplier);
+    mob.hp = mob.maxHp;
+    
+    mob.aiState = AIState.Patrol;
+    mob.targetPlayerId = "";
+    mob.patrolCenterX = x;
+    mob.patrolCenterY = y;
+    
+    this.state.mobs.set(mob.id, mob);
+  }
+  
+  private dropLoot(x: number, y: number, lootTableId: string, killerPlayerId: string) {
+    const lootTable = LOOT_TABLES[lootTableId];
+    if (!lootTable) return;
+    
+    // Process each loot entry
+    lootTable.entries.forEach(entry => {
+      if (Math.random() <= entry.dropChance) {
+        const drop = new DroppedItem();
+        drop.id = `drop_${Math.random().toString(36).slice(2, 8)}`;
+        drop.itemId = entry.itemId;
+        drop.quantity = entry.quantity;
+        drop.x = x + (Math.random() - 0.5) * 2; // Small random spread
+        drop.y = y + (Math.random() - 0.5) * 2;
+        drop.dropTime = Date.now();
+        drop.droppedBy = killerPlayerId;
+        
+        this.state.droppedItems.set(drop.id, drop);
+        
+        // Auto-cleanup after 5 minutes
+        setTimeout(() => {
+          this.state.droppedItems.delete(drop.id);
+        }, 300000);
+      }
+    });
   }
 }
 

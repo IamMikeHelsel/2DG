@@ -46,7 +46,7 @@ export class AssetLoader {
         key: anim.key,
         frames: Array.isArray(anim.frames)
           ? anim.frames.map(frame => ({ key: anim.spriteKey, frame }))
-          : frames,
+          : frames as Phaser.Types.Animations.AnimationFrame[],
         frameRate: anim.frameRate,
         repeat: anim.repeat ?? -1
       });
