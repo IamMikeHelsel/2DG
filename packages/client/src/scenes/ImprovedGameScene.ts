@@ -19,6 +19,7 @@ type ServerPlayer = {
   xpToNext: number;
   attack: number;
   defense: number;
+  lastSeq: number;
 };
 
 export class ImprovedGameScene extends Phaser.Scene {
@@ -42,6 +43,12 @@ export class ImprovedGameScene extends Phaser.Scene {
   private splashImage?: Phaser.GameObjects.Image;
   private toastRoot?: HTMLDivElement;
   private terrainMap: number[][] = [];
+
+  // Client-side prediction variables
+  private predictedPosition = { x: 0, y: 0 };
+  private inputHistory: Array<{ seq: number; up: boolean; down: boolean; left: boolean; right: boolean; timestamp: number }> = [];
+  private serverPosition = { x: 0, y: 0, seq: 0 };
+  private speed = 4; // tiles per second (matching server)
 
   constructor() { 
     super("improved-game"); 
@@ -127,6 +134,13 @@ export class ImprovedGameScene extends Phaser.Scene {
         this.cameras.main.setZoom(3);
         this.cameras.main.setBounds(0, 0, MAP.width * TILE_SIZE, MAP.height * TILE_SIZE, true);
         
+        // Initialize predicted position
+        this.predictedPosition.x = p.x;
+        this.predictedPosition.y = p.y;
+        this.serverPosition.x = p.x;
+        this.serverPosition.y = p.y;
+        this.serverPosition.seq = 0;
+        
         // UI
         this.hpText = this.add.text(12, 12, "HP", { 
           color: "#ffffff", 
@@ -177,26 +191,73 @@ export class ImprovedGameScene extends Phaser.Scene {
       const sprite = this.playerSprites.get(key);
       if (!container || !sprite) return;
       
-      // Check if player is actually moving
-      const prevX = container.x;
-      const prevY = container.y;
-      const targetX = p.x * TILE_SIZE;
-      const targetY = p.y * TILE_SIZE;
-      const isMoving = Math.abs(targetX - prevX) > 0.1 || Math.abs(targetY - prevY) > 0.1;
+      const isLocal = key === this.room.sessionId;
       
-      // Smooth movement
-      this.tweens.add({
-        targets: container,
-        x: targetX,
-        y: targetY,
-        duration: 100,
-        ease: 'Linear'
-      });
+      if (isLocal) {
+        // Store server position for reconciliation
+        this.serverPosition = { x: p.x, y: p.y, seq: p.lastSeq };
+        
+        // Server reconciliation: check if our prediction was correct
+        const threshold = 0.1; // Small tolerance for floating point differences
+        if (Math.abs(this.predictedPosition.x - p.x) > threshold || 
+            Math.abs(this.predictedPosition.y - p.y) > threshold) {
+          
+          // Server correction needed - snap to server position
+          this.predictedPosition.x = p.x;
+          this.predictedPosition.y = p.y;
+          
+          // Re-apply inputs that happened after the server's last processed input
+          this.replayInputs(p.lastSeq);
+        }
+        
+        // Use predicted position for local player
+        const targetX = this.predictedPosition.x * TILE_SIZE;
+        const targetY = this.predictedPosition.y * TILE_SIZE;
+        
+        // Smooth movement to predicted position
+        this.tweens.add({
+          targets: container,
+          x: targetX,
+          y: targetY,
+          duration: 50, // Faster for local player prediction
+          ease: 'Linear'
+        });
+      } else {
+        // For other players, use server position with smooth interpolation
+        const prevX = container.x;
+        const prevY = container.y;
+        const targetX = p.x * TILE_SIZE;
+        const targetY = p.y * TILE_SIZE;
+        const isMoving = Math.abs(targetX - prevX) > 0.1 || Math.abs(targetY - prevY) > 0.1;
+        
+        // Smooth movement
+        this.tweens.add({
+          targets: container,
+          x: targetX,
+          y: targetY,
+          duration: 100, // Standard interpolation for other players
+          ease: 'Linear'
+        });
+      }
       
       // Update animation based on direction and movement
-      const isLocal = key === this.room.sessionId;
       const spriteKey = isLocal ? 'player' : 'other_player';
       const dirs = ['up', 'right', 'down', 'left'];
+      
+      // Check if player is moving by looking at velocity from input
+      let isMoving = false;
+      if (isLocal) {
+        // For local player, check current input state
+        isMoving = this.cursors.up?.isDown || this.cursors.down?.isDown || 
+                  this.cursors.left?.isDown || this.cursors.right?.isDown;
+      } else {
+        // For other players, detect movement from position changes
+        const prevX = container.x;
+        const prevY = container.y;
+        const targetX = p.x * TILE_SIZE;
+        const targetY = p.y * TILE_SIZE;
+        isMoving = Math.abs(targetX - prevX) > 0.1 || Math.abs(targetY - prevY) > 0.1;
+      }
       
       if (isMoving && p.dir >= 0 && p.dir < 4) {
         const animKey = `${spriteKey}_walk_${dirs[p.dir]}`;
@@ -521,16 +582,13 @@ export class ImprovedGameScene extends Phaser.Scene {
       }
     });
     
-    // Movement at 20Hz (arrow keys or pathfinding to target)
+    // Movement at 20Hz with client-side prediction
     this.time.addEvent({
-      delay: 50,
+      delay: 50, // 20Hz tick rate
       callback: () => {
-        // Get current player position
-        const myPlayer = this.players.get(this.room?.sessionId);
-        if (myPlayer) {
-          myPos.x = Math.round(myPlayer.x / TILE_SIZE);
-          myPos.y = Math.round(myPlayer.y / TILE_SIZE);
-        }
+        // Get current predicted position
+        myPos.x = Math.round(this.predictedPosition.x);
+        myPos.y = Math.round(this.predictedPosition.y);
         
         let up = this.cursors.up?.isDown;
         let down = this.cursors.down?.isDown;
@@ -557,12 +615,27 @@ export class ImprovedGameScene extends Phaser.Scene {
           }
         }
         
+        // Apply client-side prediction
+        if (up || down || left || right) {
+          this.applyInputPrediction({ up, down, left, right }, 50 / 1000); // dt in seconds
+        }
+        
         // Send input if changed or if still moving
         if (up !== lastInput.up || down !== lastInput.down || 
             left !== lastInput.left || right !== lastInput.right ||
             up || down || left || right) {
           this.seq++;
-          this.room?.send("input", { seq: this.seq, up, down, left, right });
+          const timestamp = Date.now();
+          const inputData = { seq: this.seq, up, down, left, right, timestamp };
+          
+          // Store input for reconciliation
+          this.inputHistory.push(inputData);
+          
+          // Keep input history manageable (last 1 second)
+          const cutoff = timestamp - 1000;
+          this.inputHistory = this.inputHistory.filter(input => input.timestamp >= cutoff);
+          
+          this.room?.send("input", inputData);
           lastInput = { up, down, left, right };
         }
       },
@@ -838,5 +911,77 @@ export class ImprovedGameScene extends Phaser.Scene {
 
   private showMobDeath(data: any) {
     this.showToast(`${data.killerName} defeated ${data.mobId}!`, "ok");
+  }
+
+  // Client-side prediction methods
+  private applyInputPrediction(input: { up: boolean; down: boolean; left: boolean; right: boolean }, dt: number) {
+    const vel = { x: 0, y: 0 };
+    if (input.up) vel.y -= 1;
+    if (input.down) vel.y += 1;
+    if (input.left) vel.x -= 1;
+    if (input.right) vel.x += 1;
+    
+    // normalize diagonal movement
+    if (vel.x !== 0 || vel.y !== 0) {
+      const mag = Math.hypot(vel.x, vel.y);
+      vel.x /= mag;
+      vel.y /= mag;
+    }
+    
+    // Calculate new position
+    const oldX = this.predictedPosition.x;
+    const oldY = this.predictedPosition.y;
+    const nx = this.predictedPosition.x + vel.x * this.speed * dt;
+    const ny = this.predictedPosition.y + vel.y * this.speed * dt;
+
+    // Client-side collision detection (matching server logic)
+    let canMoveX = true;
+    let canMoveY = true;
+    
+    // Check X movement
+    if (!this.isWalkableClient(Math.round(nx), Math.round(this.predictedPosition.y))) {
+      canMoveX = false;
+    }
+    
+    // Check Y movement  
+    if (!this.isWalkableClient(Math.round(this.predictedPosition.x), Math.round(ny))) {
+      canMoveY = false;
+    }
+    
+    // Check diagonal movement
+    if (!this.isWalkableClient(Math.round(nx), Math.round(ny))) {
+      canMoveX = false;
+      canMoveY = false;
+    }
+    
+    // Apply movement based on collision results
+    if (canMoveX) {
+      this.predictedPosition.x = nx;
+    }
+    if (canMoveY) {
+      this.predictedPosition.y = ny;
+    }
+  }
+
+  private isWalkableClient(x: number, y: number): boolean {
+    // Check bounds
+    if (x < 0 || y < 0 || x >= MAP.width || y >= MAP.height) return false;
+    
+    // Check terrain map (client-side version)
+    if (this.terrainMap[y] && this.terrainMap[y][x] !== undefined) {
+      return this.terrainMap[y][x] === 1; // 1 = land, walkable
+    }
+    
+    // Fallback for areas not in terrain map
+    return true;
+  }
+
+  private replayInputs(lastProcessedSeq: number) {
+    // Re-apply all inputs that happened after the server's last processed input
+    const inputsToReplay = this.inputHistory.filter(input => input.seq > lastProcessedSeq);
+    
+    for (const input of inputsToReplay) {
+      this.applyInputPrediction(input, 50 / 1000); // Fixed 50ms timestep
+    }
   }
 }

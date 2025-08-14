@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { createClient } from "../net";
-import { TILE_SIZE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS } from "@toodee/shared";
+import { TILE_SIZE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, Tile } from "@toodee/shared";
 
 type ServerPlayer = { id: string; x: number; y: number; dir: number; founderTier?: string; displayTitle?: string; chatColor?: string; unlockedRewards?: string[]; };
 
@@ -41,13 +41,13 @@ export class GameScene extends Phaser.Scene {
     // Show splash immediately
     this.splashImage = this.add.image(this.scale.width / 2, this.scale.height / 2, "__splash__").setScrollFactor(0).setDepth(1000);
     this.splashImage.setOrigin(0.5);
-    const client = createClient();
-    const restore = loadSave();
-    const name = restore?.name || randomName();
+    
     try {
-      this.room = await client.joinOrCreate("toodee", { name, restore });
+      const { connectWithRetry } = await import("../net");
+      this.room = await connectWithRetry(3, 1000);
     } catch (err) {
-      this.showToast("Cannot connect to server. Check server and VITE_SERVER_URL.", "error");
+      console.error("[Connection] Failed to connect:", err);
+      this.showToast("Cannot connect to server. Check connection and try refreshing.", "error");
       return; // keep splash visible so restart is obvious
     }
 
@@ -156,36 +156,104 @@ export class GameScene extends Phaser.Scene {
     const g = this.mapLayer;
     g.clear();
     const w = MAP.width, h = MAP.height;
-    const colorWater = 0x10334a, colorLand = 0x2e4031, colorRock = 0x474b49;
+    
+    // Color palette
+    const colors: Record<Tile, number> = {
+      [Tile.Water]: 0x10334a,
+      [Tile.Land]: 0x2e4031, 
+      [Tile.Rock]: 0x474b49,
+      [Tile.CaveWall]: 0x2d1b1b,
+      [Tile.CaveFloor]: 0x3d2d2d,
+      [Tile.Crystal]: 0x7a4dff,
+      [Tile.Torch]: 0xff6b47,
+      [Tile.TownFloor]: 0x5d4e3a,
+      [Tile.TownWall]: 0x4a3c2a
+    };
 
     // World bg
     g.fillStyle(0x0b0b12, 1);
     g.fillRect(-5000, -5000, 10000, 10000);
 
-    // Elliptical "mitten" + thumb (visual, not collision)
+    // Generate same map as server for visual consistency
+    // Fill with water
+    const grid = new Array(w * h).fill(Tile.Water);
+
+    // Main mitten landmass 
     const cx = Math.floor(w * 0.45), cy = Math.floor(h * 0.55);
     const rx = Math.floor(w * 0.28), ry = Math.floor(h * 0.32);
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const nx = (x - cx) / rx;
         const ny = (y - cy) / ry;
-        let land = (nx * nx + ny * ny) <= 1.0;
-        if (x > Math.floor(w * 0.60) && x < Math.floor(w * 0.70) && y > Math.floor(h * 0.45) && y < Math.floor(h * 0.70)) {
-          land = true; // thumb
+        if (nx*nx + ny*ny <= 1.0) {
+          grid[y*w + x] = Tile.Land;
         }
-        const color = land ? colorLand : colorWater;
+      }
+    }
+    
+    // Thumb
+    for (let y = Math.floor(h*0.45); y < Math.floor(h*0.70); y++) {
+      for (let x = Math.floor(w*0.60); x < Math.floor(w*0.70); x++) {
+        if (x >= 0 && x < w && y >= 0 && y < h) {
+          grid[y*w + x] = Tile.Land;
+        }
+      }
+    }
+
+    // Add rocks
+    for (let i = 0; i < w*h*0.03; i++) {
+      const x = Math.floor(Math.random()*w);
+      const y = Math.floor(Math.random()*h);
+      if (grid[y*w + x] === Tile.Land) grid[y*w + x] = Tile.Rock;
+    }
+    
+    // Add cave areas in northern region
+    for (let y = 0; y < h * 0.4; y++) {
+      for (let x = 0; x < w; x++) {
+        if (grid[y*w + x] === Tile.Land && Math.random() < 0.1) {
+          grid[y*w + x] = Tile.CaveFloor;
+        }
+      }
+    }
+    
+    // Town spawn area
+    const sx = Math.floor(w*0.45), sy = Math.floor(h*0.55);
+    for (let y = -4; y <= 4; y++) {
+      for (let x = -4; x <= 4; x++) {
+        const ix = sx+x, iy = sy+y;
+        if (ix>=0&&iy>=0&&ix<w&&iy<h) grid[iy*w+ix] = Tile.TownFloor;
+      }
+    }
+
+    // Render all tiles
+    g.lineStyle(0, 0, 0);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const tileType = grid[y*w + x] as Tile;
+        const color = colors[tileType] || colors[Tile.Water];
         g.fillStyle(color, 1);
         g.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
       }
     }
-
-    // sprinkle rocks visually
-    g.lineStyle(0, 0, 0);
-    for (let i = 0; i < (w * h * 0.03); i++) {
+    
+    // Add some crystals for visual flair
+    g.fillStyle(colors[Tile.Crystal], 0.8);
+    for (let i = 0; i < 15; i++) {
       const x = Math.floor(Math.random() * w);
-      const y = Math.floor(Math.random() * h);
-      g.fillStyle(colorRock, 1);
-      g.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      const y = Math.floor(Math.random() * h * 0.4);
+      if (grid[y*w + x] === Tile.CaveFloor) {
+        g.fillRect(x * TILE_SIZE + 8, y * TILE_SIZE + 8, 16, 16);
+      }
+    }
+    
+    // Add torch lights
+    g.fillStyle(colors[Tile.Torch], 0.7);
+    for (let i = 0; i < 25; i++) {
+      const x = Math.floor(Math.random() * w);
+      const y = Math.floor(Math.random() * h * 0.5);
+      if ((grid[y*w + x] === Tile.CaveFloor || grid[y*w + x] === Tile.Land)) {
+        g.fillCircle(x * TILE_SIZE + 16, y * TILE_SIZE + 16, 6);
+      }
     }
   }
 

@@ -1,7 +1,14 @@
+
 import { Room, Client } from "colyseus";
-import { WorldState, Player, Mob, DroppedItem, Projectile } from "./state";
-import { TICK_RATE, MAP, ChatMessage, NPC_MERCHANT, SHOP_ITEMS, FounderTier, FOUNDER_REWARDS, EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED, REFERRAL_REWARDS, ANNIVERSARY_REWARDS, calculateLevelFromXp, getBaseStatsForLevel, DEFAULT_ITEMS, MOB_TEMPLATES, LOOT_TABLES, MobType, AIState, DamageType, ZONES, ZoneType, CRAFTING_RECIPES } from "@toodee/shared";
-import { generateMichiganish, isWalkable, Grid } from "./map";
+import { WorldState, Player, Mob, DroppedItem, Projectile } from "./state.js";
+import { 
+  TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS,
+  FounderTier, FOUNDER_REWARDS, REFERRAL_REWARDS, ANNIVERSARY_REWARDS,
+  EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED,
+  calculateLevelFromXp, getBaseStatsForLevel, DEFAULT_ITEMS, MOB_TEMPLATES, 
+  LOOT_TABLES, MobType, AIState, DamageType, ZONES, ZoneType, CRAFTING_RECIPES
+} from "@toodee/shared";
+import { generateMichiganish, isWalkable, type Grid } from "./map.js";
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean; attack?: boolean; rangedAttack?: boolean };
 
@@ -11,10 +18,20 @@ export class GameRoom extends Room<WorldState> {
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
-  private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
+
+  // Founder tracking
   private joinCounter = 0;
+  private founderTracker = new Map<string, { joinOrder: number; tier: FounderTier }>();
   private currentZone = "town"; // Default zone for this room
   private maxPlayersBeforeOverflow = 40;
+  
+  // Performance monitoring
+  private tickTimes: number[] = [];
+  private lastPerformanceLog = 0;
+  private maxTickTime = 0;
+
+  // Constants
+  private static readonly SPAWN_DUMMY_PROBABILITY = 0.3;
 
   onCreate(options: any) {
     this.setPatchRate(1000 / 10); // send state ~10/s; interpolate on client
@@ -156,36 +173,72 @@ export class GameRoom extends Room<WorldState> {
   }
 
   update(dt: number) {
+    const tickStart = performance.now();
+    
     // per-player movement
     this.state.players.forEach((p, id) => {
       const inp = this.inputs.get(id);
       if (!inp) return;
+      
       const vel = { x: 0, y: 0 };
       if (inp.up) vel.y -= 1;
       if (inp.down) vel.y += 1;
       if (inp.left) vel.x -= 1;
       if (inp.right) vel.x += 1;
-      // normalize
+      
+      // normalize diagonal movement
       if (vel.x !== 0 || vel.y !== 0) {
         const mag = Math.hypot(vel.x, vel.y);
         vel.x /= mag;
         vel.y /= mag;
       }
+      
+      const oldX = p.x;
+      const oldY = p.y;
+      
+      // Calculate new position
       const nx = p.x + vel.x * this.speed * dt;
       const ny = p.y + vel.y * this.speed * dt;
 
-      // collision in tile space (snap to tiles)
+      // Enhanced collision detection
       const tx = Math.round(nx);
       const ty = Math.round(ny);
-      if (isWalkable(this.grid, tx, ty)) {
+      
+      // Check if new position is walkable
+      let canMoveX = true;
+      let canMoveY = true;
+      
+      // Check X movement
+      if (!isWalkable(this.grid, Math.round(nx), Math.round(p.y))) {
+        canMoveX = false;
+      }
+      
+      // Check Y movement  
+      if (!isWalkable(this.grid, Math.round(p.x), Math.round(ny))) {
+        canMoveY = false;
+      }
+      
+      // Check diagonal movement
+      if (!isWalkable(this.grid, Math.round(nx), Math.round(ny))) {
+        canMoveX = false;
+        canMoveY = false;
+      }
+      
+      // Apply movement based on collision results
+      if (canMoveX) {
         p.x = nx;
+      }
+      if (canMoveY) {
         p.y = ny;
       }
-      // direction
-      if (vel.y < 0) p.dir = 0;
-      else if (vel.x > 0) p.dir = 1;
-      else if (vel.y > 0) p.dir = 2;
-      else if (vel.x < 0) p.dir = 3;
+      
+      // Only update direction if actually moving or trying to move
+      if (vel.x !== 0 || vel.y !== 0) {
+        if (vel.y < 0) p.dir = 0; // up
+        else if (vel.x > 0) p.dir = 1; // right
+        else if (vel.y > 0) p.dir = 2; // down
+        else if (vel.x < 0) p.dir = 3; // left
+      }
 
       p.lastSeq = inp.seq >>> 0;
     });
@@ -195,6 +248,24 @@ export class GameRoom extends Room<WorldState> {
     
     // Update mob AI
     this.updateMobAI(dt);
+    
+    // Performance monitoring
+    const tickEnd = performance.now();
+    const tickTime = tickEnd - tickStart;
+    this.tickTimes.push(tickTime);
+    this.maxTickTime = Math.max(this.maxTickTime, tickTime);
+    
+    // Keep only last 100 measurements
+    if (this.tickTimes.length > 100) {
+      this.tickTimes.shift();
+    }
+    
+    // Log performance every 30 seconds
+    const now = Date.now();
+    if (now - this.lastPerformanceLog > 30000) {
+      this.logPerformanceStats();
+      this.lastPerformanceLog = now;
+    }
   }
 
   private handleAttack(playerId: string) {
@@ -330,8 +401,6 @@ export class GameRoom extends Room<WorldState> {
     if (!this.isNearMerchant(p)) {
       this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: false, reason: "Too far from merchant" });
       return;
-    // Spawn a training dummy near town
-    this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
     }
     const item = SHOP_ITEMS.find(i => i.id === data?.id);
     const qty = Math.max(1, Math.min(99, Number(data?.qty ?? 1) | 0));
@@ -347,6 +416,31 @@ export class GameRoom extends Room<WorldState> {
     p.gold -= cost;
     if (item.id === "pot_small") p.pots = Math.min(999, p.pots + qty);
     this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
+    
+    // Spawn a training dummy near town when someone buys potions
+    if (Math.random() < GameRoom.SPAWN_DUMMY_PROBABILITY) { // 30% chance
+      this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
+    }
+  }
+
+  private logPerformanceStats() {
+    if (this.tickTimes.length === 0) return;
+    
+    const sorted = [...this.tickTimes].sort((a, b) => a - b);
+    const p95Index = Math.floor(sorted.length * 0.95);
+    const p95 = sorted[p95Index];
+    const avg = sorted.reduce((sum, time) => sum + time, 0) / sorted.length;
+    const playerCount = this.state.players.size;
+    
+    console.log(`[Performance] Room ${this.roomId}: ${playerCount} players, avg tick: ${avg.toFixed(2)}ms, p95 tick: ${p95.toFixed(2)}ms, max: ${this.maxTickTime.toFixed(2)}ms`);
+    
+    // Reset max for next period
+    this.maxTickTime = 0;
+    
+    // Alert if p95 exceeds target
+    if (p95 > 8) {
+      console.warn(`⚠️  Performance warning: p95 tick time ${p95.toFixed(2)}ms exceeds 8ms target with ${playerCount} players`);
+    }
   }
 
   private determineFounderTier(joinOrder: number, joinTimestamp: number): FounderTier {

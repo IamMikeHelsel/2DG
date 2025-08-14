@@ -38,15 +38,17 @@ export class AssetLoader {
 
   createAnimations(animations: AnimationConfig[]) {
     animations.forEach(anim => {
-      const frames = Array.isArray(anim.frames) 
-        ? anim.frames 
-        : this.scene.anims.generateFrameNumbers(anim.spriteKey, anim.frames);
+      let frames: Phaser.Types.Animations.AnimationFrame[];
+      
+      if (Array.isArray(anim.frames)) {
+        frames = anim.frames.map(frame => ({ key: anim.spriteKey, frame }));
+      } else {
+        frames = this.scene.anims.generateFrameNumbers(anim.spriteKey, anim.frames);
+      }
 
       this.scene.anims.create({
         key: anim.key,
-        frames: Array.isArray(anim.frames)
-          ? anim.frames.map(frame => ({ key: anim.spriteKey, frame }))
-          : frames as Phaser.Types.Animations.AnimationFrame[],
+        frames: frames,
         frameRate: anim.frameRate,
         repeat: anim.repeat ?? -1
       });
