@@ -79,7 +79,8 @@ export class GameRoom extends Room<WorldState> {
     // Check if room is at capacity
     if (this.state.players.size >= this.maxPlayersBeforeOverflow) {
       client.error(1000, "Room full - creating overflow instance");
-      return false;
+      client.leave();
+      return;
     }
     
     const p = new Player();
