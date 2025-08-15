@@ -750,7 +750,19 @@ export class GameRoom extends Room<WorldState> {
       let closestDistance = Infinity;
       
       this.state.players.forEach((player: Player) => {
+      
+      // Only consider players within a bounding box around the mob (aggroRange + 2 tiles buffer)
+      const aggroBuffer = 2;
+      const range = (template.aggroRange || 5) + aggroBuffer;
+      this.state.players.forEach((player: Player) => {
         if (player.hp <= 0) return;
+        // Fast bounding box check before expensive distance calculation
+        if (
+          Math.abs(mob.x - player.x) > range ||
+          Math.abs(mob.y - player.y) > range
+        ) {
+          return;
+        }
         const distance = Math.hypot(mob.x - player.x, mob.y - player.y);
         if (distance < closestDistance) {
           closestDistance = distance;
