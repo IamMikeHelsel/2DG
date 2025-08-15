@@ -13,6 +13,12 @@ type ServerPlayer = {
   maxHp: number;
   gold: number;
   pots: number;
+  level: number;
+  totalXp: number;
+  currentXp: number;
+  xpToNext: number;
+  attack: number;
+  defense: number;
   lastSeq: number;
 };
 
@@ -31,6 +37,8 @@ export class ImprovedGameScene extends Phaser.Scene {
   private chatInputEl?: HTMLInputElement;
   private hpText?: Phaser.GameObjects.Text;
   private goldText?: Phaser.GameObjects.Text;
+  private levelText?: Phaser.GameObjects.Text;
+  private xpText?: Phaser.GameObjects.Text;
   private shopEl?: HTMLDivElement;
   private splashImage?: Phaser.GameObjects.Image;
   private toastRoot?: HTMLDivElement;
@@ -148,6 +156,20 @@ export class ImprovedGameScene extends Phaser.Scene {
           strokeThickness: 2
         }).setScrollFactor(0).setDepth(100);
         
+        this.levelText = this.add.text(12, 52, "Level", { 
+          color: "#00ff88", 
+          fontSize: "14px",
+          stroke: '#000000',
+          strokeThickness: 2
+        }).setScrollFactor(0).setDepth(100);
+        
+        this.xpText = this.add.text(12, 72, "XP", { 
+          color: "#88ccff", 
+          fontSize: "14px",
+          stroke: '#000000',
+          strokeThickness: 2
+        }).setScrollFactor(0).setDepth(100);
+        
         // Add controls hint
         this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat", {
           color: "#aaaaaa",
@@ -260,6 +282,8 @@ export class ImprovedGameScene extends Phaser.Scene {
       if (isLocal) {
         this.hpText?.setText(`HP: ${p.hp}/${p.maxHp}`);
         this.goldText?.setText(`Gold: ${p.gold}`);
+        this.levelText?.setText(`Level: ${p.level || 1}`);
+        this.xpText?.setText(`XP: ${p.currentXp || 0}/${p.xpToNext || 100}`);
         this.saveSave(p);
       }
     };
@@ -320,6 +344,13 @@ export class ImprovedGameScene extends Phaser.Scene {
     
     // Handle chat
     this.room.onMessage("chat", (msg: ChatMessage) => this.appendChat(msg));
+    
+    // Handle level up
+    this.room.onMessage("level_up", (data: any) => this.showLevelUp(data));
+    
+    // Handle damage/combat feedback
+    this.room.onMessage("damage", (data: any) => this.showDamage(data));
+    this.room.onMessage("mob_death", (data: any) => this.showMobDeath(data));
 
     // Fade splash
     if (this.splashImage) {
@@ -336,23 +367,66 @@ export class ImprovedGameScene extends Phaser.Scene {
 
   private createAnimations() {
     ['player', 'other_player', 'mob'].forEach(key => {
-      // Idle animations
-      ['down', 'left', 'right', 'up'].forEach((dir, i) => {
+      // First check if the texture exists
+      if (this.textures.exists(key)) {
+        // Idle animations using frame names
         this.anims.create({
-          key: `${key}_idle_${dir}`,
-          frames: [{ key, frame: i * 4 }],
+          key: `${key}_idle_down`,
+          frames: [{ key, frame: '0' }],
           frameRate: 1,
           repeat: 0
         });
         
-        // Walk animations
         this.anims.create({
-          key: `${key}_walk_${dir}`,
-          frames: this.anims.generateFrameNumbers(key, { start: i * 4, end: i * 4 + 3 }),
-          frameRate: 8,
+          key: `${key}_idle_left`, 
+          frames: [{ key, frame: '4' }],
+          frameRate: 1,
+          repeat: 0
+        });
+        
+        this.anims.create({
+          key: `${key}_idle_right`,
+          frames: [{ key, frame: '8' }], 
+          frameRate: 1,
+          repeat: 0
+        });
+        
+        this.anims.create({
+          key: `${key}_idle_up`,
+          frames: [{ key, frame: '12' }],
+          frameRate: 1,
+          repeat: 0
+        });
+        
+        // Walking animations (simple 2-frame)
+        this.anims.create({
+          key: `${key}_walk_down`,
+          frames: [{ key, frame: '0' }, { key, frame: '1' }],
+          frameRate: 4,
           repeat: -1
         });
-      });
+        
+        this.anims.create({
+          key: `${key}_walk_left`,
+          frames: [{ key, frame: '4' }, { key, frame: '5' }],
+          frameRate: 4,
+          repeat: -1
+        });
+        
+        this.anims.create({
+          key: `${key}_walk_right`,
+          frames: [{ key, frame: '8' }, { key, frame: '9' }],
+          frameRate: 4,
+          repeat: -1
+        });
+        
+        this.anims.create({
+          key: `${key}_walk_up`,
+          frames: [{ key, frame: '12' }, { key, frame: '13' }],
+          frameRate: 4,
+          repeat: -1
+        });
+      }
     });
   }
 
@@ -775,6 +849,68 @@ export class ImprovedGameScene extends Phaser.Scene {
     const a = ["Bold", "Swift", "Calm", "Brave", "Merry"];
     const b = ["Fox", "Owl", "Pine", "Fawn", "Wolf"];
     return `${a[Math.floor(Math.random() * a.length)]}${b[Math.floor(Math.random() * b.length)]}`;
+  }
+
+  private showLevelUp(data: any) {
+    // Create level up notification
+    const text = this.add.text(this.scale.width / 2, this.scale.height / 2 - 50, 
+      `${data.playerName} reached Level ${data.newLevel}!`, {
+        fontSize: '24px',
+        color: '#ffff00',
+        stroke: '#000000',
+        strokeThickness: 3
+      }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(200);
+
+    // Add glow effect
+    this.tweens.add({
+      targets: text,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      yoyo: true,
+      duration: 300,
+      ease: 'Sine.easeInOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: text,
+          alpha: 0,
+          y: text.y - 50,
+          duration: 2000,
+          onComplete: () => text.destroy()
+        });
+      }
+    });
+  }
+
+  private showDamage(data: any) {
+    if (data.targetType === "mob") {
+      const mob = this.mobs.get(data.targetId);
+      if (mob) {
+        // Show damage number floating up from mob
+        const text = this.add.text(
+          mob.body.x, mob.body.y - 20, 
+          `-${data.damage}`, {
+            fontSize: '16px',
+            color: '#ff6666',
+            stroke: '#000000',
+            strokeThickness: 2
+          }).setOrigin(0.5, 0.5).setDepth(150);
+
+        this.tweens.add({
+          targets: text,
+          y: text.y - 30,
+          alpha: 0,
+          duration: 1500,
+          onComplete: () => text.destroy()
+        });
+      }
+    } else if (data.targetType === "player") {
+      // Show PvP damage indicator
+      this.showToast(`${data.attackerName} dealt ${data.damage} damage!`, "error");
+    }
+  }
+
+  private showMobDeath(data: any) {
+    this.showToast(`${data.killerName} defeated ${data.mobId}!`, "ok");
   }
 
   // Client-side prediction methods
