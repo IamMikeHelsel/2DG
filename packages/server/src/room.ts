@@ -864,7 +864,7 @@ export class GameRoom extends Room<WorldState> {
           }
           
           // Perform attack (simple damage over time)
-          const mobAttackDamage = Math.floor(template.baseStats.attack * (1 + (mob.level - 1) * 0.2));
+          const mobAttackDamage = Math.floor(template.baseStats.attack * getLevelMultiplier(mob.level));
           const finalDamage = Math.max(1, mobAttackDamage - attackTarget.defense);
           
           attackTarget.hp = Math.max(0, attackTarget.hp - finalDamage);
