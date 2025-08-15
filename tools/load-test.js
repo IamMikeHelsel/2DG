@@ -178,9 +178,7 @@ async function runLoadTest() {
     console.log(`📊 Latency summary (${allLatencies.length} samples):`);
     console.log(`   p50: ${p50}ms, p95: ${p95}ms, p99: ${p99}ms`);
     
-    if (p95 > 120) {
-      console.log(`⚠️  p95 latency ${p95}ms exceeds 120ms target`);
-    } else {
+    const LATENCY_THRESHOLD_MS = 120;
     if (p95 > LATENCY_THRESHOLD_MS) {
       console.log(`⚠️  p95 latency ${p95}ms exceeds ${LATENCY_THRESHOLD_MS}ms target`);
     } else {

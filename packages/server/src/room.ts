@@ -1,10 +1,11 @@
 
 import { Room, Client } from "colyseus";
-import { WorldState, Player, Mob } from "./state.js";
+import { WorldState, Player, Monster } from "./state.js";
 import { 
   TICK_RATE, MAP, type ChatMessage, NPC_MERCHANT, SHOP_ITEMS,
   FounderTier, FOUNDER_REWARDS, REFERRAL_REWARDS, ANNIVERSARY_REWARDS,
-  EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED
+  EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED,
+  MonsterType, MONSTER_CONFIGS, MAX_MONSTERS, MONSTER_SPAWN_INTERVAL, MONSTER_SPAWN_ZONES
 } from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
 
@@ -27,6 +28,11 @@ export class GameRoom extends Room<WorldState> {
   private lastPerformanceLog = 0;
   private maxTickTime = 0;
 
+  // Monster tracking
+  private monsterCounter = 0;
+  private lastMonsterSpawn = 0;
+  private monsterAttackCooldowns = new Map<string, number>();
+  
   // Constants
   private static readonly SPAWN_DUMMY_PROBABILITY = 0.3;
 
@@ -57,6 +63,9 @@ export class GameRoom extends Room<WorldState> {
     this.onMessage("referral", (client, data: { referredPlayerId: string }) => this.handleReferral(client.sessionId, data));
 
     this.setSimulationInterval((dtMS) => this.update(dtMS / 1000), 1000 / TICK_RATE);
+    
+    // Spawn initial monsters
+    this.spawnInitialMonsters();
   }
 
   onJoin(client: Client, options: any) {
@@ -177,6 +186,12 @@ export class GameRoom extends Room<WorldState> {
       p.lastSeq = inp.seq >>> 0;
     });
     
+    // Update monsters
+    this.updateMonsters(dt);
+    
+    // Spawn new monsters periodically
+    this.trySpawnMonster();
+    
     // Performance monitoring
     const tickEnd = performance.now();
     const tickTime = tickEnd - tickStart;
@@ -207,19 +222,22 @@ export class GameRoom extends Room<WorldState> {
 
     // Hit check: 1-tile arc in front, mobs first then players
     const front = neighbor(attacker.x, attacker.y, attacker.dir);
-    // Attack mobs
+    // Attack monsters
     let hitSomething = false;
-    this.state.mobs.forEach((m, key) => {
+    this.state.monsters.forEach((m, key) => {
       const mx = Math.round(m.x), my = Math.round(m.y);
       if (mx === front.x && my === front.y && m.hp > 0 && !hitSomething) {
         m.hp = Math.max(0, m.hp - 30);
         hitSomething = true;
         if (m.hp === 0) {
-          // reward attacker
-          attacker.hp = Math.min(attacker.maxHp, attacker.hp + 10);
-          attacker.gold = Math.min(999999, attacker.gold + 10);
-          const id = key;
-          setTimeout(() => this.respawnMob(id), 2000);
+          // reward attacker based on monster type
+          const config = MONSTER_CONFIGS[m.monsterType as MonsterType];
+          if (config) {
+            attacker.hp = Math.min(attacker.maxHp, attacker.hp + 10);
+            attacker.gold = Math.min(999999, attacker.gold + config.goldReward);
+          }
+          // Remove dead monster
+          this.state.monsters.delete(key);
         }
       }
     });
@@ -247,21 +265,130 @@ export class GameRoom extends Room<WorldState> {
     });
   }
 
-  private spawnMob(pos: { x: number; y: number }) {
-    const m = new Mob();
-    m.id = `mob_${Math.random().toString(36).slice(2, 8)}`;
-    m.x = pos.x;
-    m.y = pos.y;
-    m.maxHp = 60;
-    m.hp = m.maxHp;
-    this.state.mobs.set(m.id, m);
+  private spawnInitialMonsters() {
+    // Spawn a few initial monsters in each zone
+    for (const zone of MONSTER_SPAWN_ZONES) {
+      for (let i = 0; i < 3; i++) {
+        this.spawnMonsterInZone(zone);
+      }
+    }
   }
-
-  private respawnMob(id: string) {
-    const m = this.state.mobs.get(id);
-    if (!m) return;
-    // simple respawn at original spot
-    m.hp = m.maxHp;
+  
+  private spawnMonsterInZone(zone: { x: number; y: number; radius: number }) {
+    if (this.state.monsters.size >= MAX_MONSTERS) return;
+    
+    // Try to find a walkable position in the zone
+    let attempts = 0;
+    while (attempts < 10) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.random() * zone.radius;
+      const x = Math.round(zone.x + Math.cos(angle) * radius);
+      const y = Math.round(zone.y + Math.sin(angle) * radius);
+      
+      if (x >= 0 && x < MAP.width && y >= 0 && y < MAP.height && isWalkable(this.grid, x, y)) {
+        this.spawnMonster(x, y);
+        break;
+      }
+      attempts++;
+    }
+  }
+  
+  private spawnMonster(x: number, y: number) {
+    const types = Object.values(MonsterType);
+    const type = types[Math.floor(Math.random() * types.length)];
+    const config = MONSTER_CONFIGS[type];
+    
+    const m = new Monster();
+    m.id = `monster_${this.monsterCounter++}`;
+    m.monsterType = type;
+    m.x = x;
+    m.y = y;
+    m.maxHp = config.hp;
+    m.hp = config.hp;
+    m.targetPlayerId = "";
+    m.lastAttackTime = 0;
+    
+    this.state.monsters.set(m.id, m);
+  }
+  
+  private trySpawnMonster() {
+    const now = Date.now();
+    if (now - this.lastMonsterSpawn < MONSTER_SPAWN_INTERVAL) return;
+    if (this.state.monsters.size >= MAX_MONSTERS) return;
+    
+    this.lastMonsterSpawn = now;
+    const zone = MONSTER_SPAWN_ZONES[Math.floor(Math.random() * MONSTER_SPAWN_ZONES.length)];
+    this.spawnMonsterInZone(zone);
+  }
+  
+  private updateMonsters(dt: number) {
+    const now = Date.now();
+    
+    this.state.monsters.forEach((monster, id) => {
+      if (monster.hp <= 0) return;
+      
+      const config = MONSTER_CONFIGS[monster.monsterType as MonsterType];
+      if (!config) return;
+      
+      // Find closest player within detection range
+      let closestPlayer: Player | undefined;
+      let closestDistance = config.detectionRange;
+      
+      this.state.players.forEach(player => {
+        if (player.hp <= 0) return;
+        const dist = Math.hypot(player.x - monster.x, player.y - monster.y);
+        if (dist < closestDistance) {
+          closestDistance = dist;
+          closestPlayer = player;
+        }
+      });
+      
+      if (closestPlayer) {
+        monster.targetPlayerId = closestPlayer.id;
+        
+        // Move towards target
+        const dx = closestPlayer.x - monster.x;
+        const dy = closestPlayer.y - monster.y;
+        const dist = Math.hypot(dx, dy);
+        
+        if (dist > config.attackRange) {
+          // Move towards player
+          const moveX = (dx / dist) * config.speed * dt;
+          const moveY = (dy / dist) * config.speed * dt;
+          
+          const newX = monster.x + moveX;
+          const newY = monster.y + moveY;
+          
+          // Check collision
+          if (isWalkable(this.grid, Math.round(newX), Math.round(newY))) {
+            monster.x = newX;
+            monster.y = newY;
+          }
+        } else {
+          // Attack if in range and cooldown expired
+          const lastAttack = this.monsterAttackCooldowns.get(id) || 0;
+          if (now - lastAttack > 1000) { // 1 second attack cooldown
+            closestPlayer.hp = Math.max(0, closestPlayer.hp - config.damage);
+            this.monsterAttackCooldowns.set(id, now);
+            monster.lastAttackTime = now;
+            
+            // Respawn player if killed
+            if (closestPlayer.hp === 0) {
+              const playerId = closestPlayer.id;
+              setTimeout(() => {
+                const p = this.state.players.get(playerId);
+                if (!p) return;
+                p.x = Math.floor(MAP.width * 0.45);
+                p.y = Math.floor(MAP.height * 0.55);
+                p.hp = p.maxHp;
+              }, 1500);
+            }
+          }
+        }
+      } else {
+        monster.targetPlayerId = "";
+      }
+    });
   }
 
   private isNearMerchant(p: Player) {
@@ -299,9 +426,13 @@ export class GameRoom extends Room<WorldState> {
     if (item.id === "pot_small") p.pots = Math.min(999, p.pots + qty);
     this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
     
-    // Spawn a training dummy near town when someone buys potions
+    // Spawn a slime near town when someone buys potions
     if (Math.random() < GameRoom.SPAWN_DUMMY_PROBABILITY) { // 30% chance
-      this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
+      const x = Math.floor(MAP.width * 0.45) + 4;
+      const y = Math.floor(MAP.height * 0.55);
+      if (isWalkable(this.grid, x, y)) {
+        this.spawnMonster(x, y);
+      }
     }
   }
 

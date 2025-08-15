@@ -171,3 +171,97 @@ export const ANNIVERSARY_REWARDS: RewardItem[] = [
 export const EARLY_BIRD_LIMIT = 50;
 export const BETA_TEST_PERIOD_DAYS = 14;
 export const BUG_HUNTER_REPORTS_REQUIRED = 5;
+
+// Monster System
+export enum MonsterType {
+  RedSlime = "red_slime",
+  BlueSlime = "blue_slime",
+  GreenSlime = "green_slime",
+  Goblin = "goblin",
+  Wolf = "wolf"
+}
+
+export interface MonsterConfig {
+  type: MonsterType;
+  name: string;
+  hp: number;
+  damage: number;
+  speed: number;
+  attackRange: number;
+  detectionRange: number;
+  goldReward: number;
+  expReward: number;
+  color: string;
+}
+
+export const MONSTER_CONFIGS: Record<MonsterType, MonsterConfig> = {
+  [MonsterType.RedSlime]: {
+    type: MonsterType.RedSlime,
+    name: "Red Slime",
+    hp: 30,
+    damage: 5,
+    speed: 1.5,
+    attackRange: 1.5,
+    detectionRange: 5,
+    goldReward: 5,
+    expReward: 10,
+    color: "#FF4444"
+  },
+  [MonsterType.BlueSlime]: {
+    type: MonsterType.BlueSlime,
+    name: "Blue Slime",
+    hp: 40,
+    damage: 7,
+    speed: 1.2,
+    attackRange: 1.5,
+    detectionRange: 6,
+    goldReward: 8,
+    expReward: 15,
+    color: "#4444FF"
+  },
+  [MonsterType.GreenSlime]: {
+    type: MonsterType.GreenSlime,
+    name: "Green Slime",
+    hp: 25,
+    damage: 4,
+    speed: 2,
+    attackRange: 1.5,
+    detectionRange: 4,
+    goldReward: 3,
+    expReward: 8,
+    color: "#44FF44"
+  },
+  [MonsterType.Goblin]: {
+    type: MonsterType.Goblin,
+    name: "Goblin",
+    hp: 50,
+    damage: 10,
+    speed: 2.5,
+    attackRange: 2,
+    detectionRange: 7,
+    goldReward: 15,
+    expReward: 25,
+    color: "#8B4513"
+  },
+  [MonsterType.Wolf]: {
+    type: MonsterType.Wolf,
+    name: "Wolf",
+    hp: 60,
+    damage: 12,
+    speed: 3,
+    attackRange: 2,
+    detectionRange: 8,
+    goldReward: 20,
+    expReward: 30,
+    color: "#666666"
+  }
+};
+
+export const MAX_MONSTERS = 30;
+export const MONSTER_SPAWN_INTERVAL = 5000; // ms
+export const MONSTER_SPAWN_ZONES = [
+  { x: 10, y: 10, radius: 10 },  // Northwest spawn zone
+  { x: 86, y: 10, radius: 10 },  // Northeast spawn zone
+  { x: 10, y: 86, radius: 10 },  // Southwest spawn zone
+  { x: 86, y: 86, radius: 10 }   // Southeast spawn zone
+];

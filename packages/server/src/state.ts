@@ -31,14 +31,17 @@ export class GameState extends Schema {
   @type("uint16") height: number = 0;
 }
 
-export class Mob extends Schema {
+export class Monster extends Schema {
   @type("string") id: string = "";
+  @type("string") monsterType: string = "";
   @type("float32") x: number = 0;
   @type("float32") y: number = 0;
   @type("uint16") hp: number = 0;
   @type("uint16") maxHp: number = 0;
+  @type("string") targetPlayerId: string = "";
+  @type("float32") lastAttackTime: number = 0;
 }
 
 export class WorldState extends GameState {
-  @type({ map: Mob }) mobs = new MapSchema<Mob>();
+  @type({ map: Monster }) monsters = new MapSchema<Monster>();
 }
