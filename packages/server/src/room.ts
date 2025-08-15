@@ -774,7 +774,7 @@ export class GameRoom extends Room<WorldState> {
       switch (mob.aiState) {
         case AIState.Patrol:
           // Random patrol around spawn point
-          if (Math.random() < 0.02) { // 2% chance per frame to change direction
+          if (Math.random() < DEFAULT_PATROL_CHANGE_FREQUENCY) { // 2% chance per frame to change direction
             const angle = Math.random() * Math.PI * 2;
             const distance = 2 + Math.random() * 3; // 2-5 tiles from center
             const targetX = mob.patrolCenterX + Math.cos(angle) * distance;
