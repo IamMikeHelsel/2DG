@@ -1,22 +1,14 @@
 import Phaser from "phaser";
 import { GameScene } from "./scenes/GameScene";
-import { ImprovedGameScene } from "./scenes/ImprovedGameScene";
-
-// Use improved scene with character sprites and better terrain
-const useImproved = true;
 
 const config: Phaser.Types.Core.GameConfig = {
-  type: Phaser.WEBGL,
+  type: Phaser.AUTO,
   parent: "app",
-  width: window.innerWidth,
-  height: window.innerHeight,
+  width: 800,
+  height: 600,
   pixelArt: true,
-  backgroundColor: "#0f0f13",
-  physics: { default: "arcade" },
-  scale: {
-    mode: Phaser.Scale.RESIZE
-  },
-  scene: useImproved ? [ImprovedGameScene] : [GameScene]
+  backgroundColor: "#222222",
+  scene: [GameScene]
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
