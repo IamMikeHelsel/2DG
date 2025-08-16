@@ -49,26 +49,34 @@ export class ImprovedGameScene extends Phaser.Scene {
   private inputHistory: Array<{ seq: number; up: boolean; down: boolean; left: boolean; right: boolean; timestamp: number }> = [];
   private serverPosition = { x: 0, y: 0, seq: 0 };
   private speed = 4; // tiles per second (matching server)
+  private lastInput = { up: false, down: false, left: false, right: false };
+  private updateLogged = false;
 
   constructor() { 
-    super("improved-game"); 
+    super("improved-game");
+    console.log('[SCENE] ImprovedGameScene constructor called');
   }
 
   preload() {
+    console.log('[SCENE] ImprovedGameScene preload started');
     this.load.image("splash", "/toodeegame_splash.png");
     
     // Generate character sprites
+    console.log('[SCENE] Generating sprites...');
     SpriteGenerator.generateCharacterSpritesheet(this, 'player', 0x3498db, 32);
     SpriteGenerator.generateCharacterSpritesheet(this, 'other_player', 0x9b59b6, 32);
     SpriteGenerator.generateCharacterSpritesheet(this, 'mob', 0xe74c3c, 32);
+    console.log('[SCENE] Sprites generated');
   }
 
   async create() {
+    console.log('[SCENE] ImprovedGameScene create started');
     this.cursors = this.input.keyboard!.createCursorKeys();
     // Remove WASD since we use chat
     this.keys = {} as any;
 
     // Create animation sets for sprites
+    console.log('[SCENE] Creating animations...');
     this.createAnimations();
 
     // Draw improved map
@@ -97,15 +105,29 @@ export class ImprovedGameScene extends Phaser.Scene {
     this.room.state.players.onAdd = (p: ServerPlayer, key: string) => {
       const isLocal = key === this.room.sessionId;
       
+      // Debug logging
+      console.log(`[PLAYER ADD] key: ${key}, sessionId: ${this.room.sessionId}, isLocal: ${isLocal}`);
+      console.log(`[PLAYER ADD] Using sprite: ${isLocal ? 'player' : 'other_player'}`);
+      console.log(`[PLAYER ADD] Player name: ${p.name}, position: (${p.x}, ${p.y})`);
+      
       // Create container for player
       const container = this.add.container(p.x * TILE_SIZE, p.y * TILE_SIZE);
       
       // Add shadow
       const shadow = this.add.ellipse(0, 6, TILE_SIZE * 0.7, TILE_SIZE * 0.35, 0x000000, 0.3);
       
-      // Add sprite
-      const sprite = this.add.sprite(0, 0, isLocal ? 'player' : 'other_player');
-      sprite.play(`${isLocal ? 'player' : 'other_player'}_idle_down`);
+      // Add sprite - FIXED: use correct sprite key
+      const spriteKey = isLocal ? 'player' : 'other_player';
+      const sprite = this.add.sprite(0, 0, spriteKey);
+      
+      // Check if animation exists before playing
+      const animKey = `${spriteKey}_idle_down`;
+      if (this.anims.exists(animKey)) {
+        sprite.play(animKey);
+        console.log(`[PLAYER ADD] Playing animation: ${animKey}`);
+      } else {
+        console.error(`[PLAYER ADD] Animation not found: ${animKey}`);
+      }
       
       // Add name text
       const nameText = this.add.text(0, -TILE_SIZE * 0.8, p.name || "Player", {
@@ -982,6 +1004,72 @@ export class ImprovedGameScene extends Phaser.Scene {
     
     for (const input of inputsToReplay) {
       this.applyInputPrediction(input, 50 / 1000); // Fixed 50ms timestep
+    }
+  }
+
+  update(time: number, delta: number) {
+    if (!this.room) {
+      return;
+    }
+    
+    // Log once to confirm update is running
+    if (!this.updateLogged) {
+      console.log('[SCENE] Update method is running!');
+      this.updateLogged = true;
+    }
+    
+    // Read input from keyboard
+    const up = this.cursors.up?.isDown || false;
+    const down = this.cursors.down?.isDown || false;
+    const left = this.cursors.left?.isDown || false;
+    const right = this.cursors.right?.isDown || false;
+    
+    // Check if input has changed
+    const inputChanged = 
+      up !== this.lastInput.up ||
+      down !== this.lastInput.down ||
+      left !== this.lastInput.left ||
+      right !== this.lastInput.right;
+    
+    if (inputChanged) {
+      // Update last input
+      this.lastInput = { up, down, left, right };
+      
+      // Create input message
+      const input = {
+        seq: ++this.seq,
+        up,
+        down,
+        left,
+        right,
+        timestamp: Date.now()
+      };
+      
+      // Send to server
+      this.room.send('input', input);
+      
+      // Debug log
+      if (up || down || left || right) {
+        console.log('[INPUT] Sending:', input);
+      }
+      
+      // Store in history for reconciliation
+      this.inputHistory.push(input);
+      
+      // Keep only last 60 inputs (3 seconds at 20Hz)
+      if (this.inputHistory.length > 60) {
+        this.inputHistory.shift();
+      }
+      
+      // Apply client-side prediction immediately
+      this.applyInputPrediction(input, delta / 1000);
+      
+      // Update local player position visually
+      const localPlayer = this.players.get(this.room.sessionId);
+      if (localPlayer) {
+        localPlayer.x = this.predictedPosition.x * TILE_SIZE;
+        localPlayer.y = this.predictedPosition.y * TILE_SIZE;
+      }
     }
   }
 }
