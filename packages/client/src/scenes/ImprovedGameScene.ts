@@ -369,61 +369,61 @@ export class ImprovedGameScene extends Phaser.Scene {
     ['player', 'other_player', 'mob'].forEach(key => {
       // First check if the texture exists
       if (this.textures.exists(key)) {
-        // Idle animations using frame names
+        // Idle animations using frame indices
         this.anims.create({
           key: `${key}_idle_down`,
-          frames: [{ key, frame: '0' }],
+          frames: [{ key, frame: 0 }],
           frameRate: 1,
           repeat: 0
         });
         
         this.anims.create({
           key: `${key}_idle_left`, 
-          frames: [{ key, frame: '4' }],
+          frames: [{ key, frame: 4 }],
           frameRate: 1,
           repeat: 0
         });
         
         this.anims.create({
           key: `${key}_idle_right`,
-          frames: [{ key, frame: '8' }], 
+          frames: [{ key, frame: 8 }], 
           frameRate: 1,
           repeat: 0
         });
         
         this.anims.create({
           key: `${key}_idle_up`,
-          frames: [{ key, frame: '12' }],
+          frames: [{ key, frame: 12 }],
           frameRate: 1,
           repeat: 0
         });
         
-        // Walking animations (simple 2-frame)
+        // Walking animations using generateFrameNumbers for full 4-frame animations
         this.anims.create({
           key: `${key}_walk_down`,
-          frames: [{ key, frame: '0' }, { key, frame: '1' }],
-          frameRate: 4,
+          frames: this.anims.generateFrameNumbers(key, { start: 0, end: 3 }),
+          frameRate: 8,
           repeat: -1
         });
         
         this.anims.create({
           key: `${key}_walk_left`,
-          frames: [{ key, frame: '4' }, { key, frame: '5' }],
-          frameRate: 4,
+          frames: this.anims.generateFrameNumbers(key, { start: 4, end: 7 }),
+          frameRate: 8,
           repeat: -1
         });
         
         this.anims.create({
           key: `${key}_walk_right`,
-          frames: [{ key, frame: '8' }, { key, frame: '9' }],
-          frameRate: 4,
+          frames: this.anims.generateFrameNumbers(key, { start: 8, end: 11 }),
+          frameRate: 8,
           repeat: -1
         });
         
         this.anims.create({
           key: `${key}_walk_up`,
-          frames: [{ key, frame: '12' }, { key, frame: '13' }],
-          frameRate: 4,
+          frames: this.anims.generateFrameNumbers(key, { start: 12, end: 15 }),
+          frameRate: 8,
           repeat: -1
         });
       }

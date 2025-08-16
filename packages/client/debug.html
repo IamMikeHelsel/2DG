@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Game Client</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: monospace;
+            background: #222;
+            color: #0f0;
+        }
+        #game-container {
+            width: 800px;
+            height: 600px;
+            border: 2px solid #0f0;
+            margin: 20px auto;
+            position: relative;
+        }
+        #status {
+            text-align: center;
+            padding: 10px;
+        }
+        .error { color: #f00; }
+        .success { color: #0f0; }
+    </style>
+</head>
+<body>
+    <div id="status">Loading...</div>
+    <div id="game-container"></div>
+    
+    <script type="module">
+        // Import from local build
+        const statusEl = document.getElementById('status');
+        
+        // Simple status logger
+        window.logStatus = (msg, isError = false) => {
+            console.log(msg);
+            statusEl.className = isError ? 'error' : 'success';
+            statusEl.textContent = msg;
+        };
+        
+        // Load the game
+        logStatus('Initializing game...');
+        
+        // Create script to load the game
+        const script = document.createElement('script');
+        script.type = 'module';
+        script.src = '/src/main.ts';
+        script.onerror = () => logStatus('Failed to load game script', true);
+        document.body.appendChild(script);
+        
+        // Monitor for errors
+        window.addEventListener('error', (e) => {
+            logStatus(`Error: ${e.message}`, true);
+        });
+        
+        // Check connection after a delay
+        setTimeout(() => {
+            if (!window.game) {
+                logStatus('Game not initialized after 3s', true);
+            }
+        }, 3000);
+    </script>
+</body>
+</html>

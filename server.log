@@ -1,0 +1,47 @@
+
+> toodee-birthday-demo@ dev:all /mnt/c/Dev/2DG
+> concurrently -k -n server,client -c cyan,magenta "pnpm -F @toodee/server dev" "VITE_SERVER_URL=ws://localhost:2567 pnpm -F @toodee/client dev"
+
+[server] 
+[server] > @toodee/server@0.1.0 dev /mnt/c/Dev/2DG/packages/server
+[server] > tsx src/index.ts
+[server] 
+[client] 
+[client] > @toodee/client@0.1.0 dev /mnt/c/Dev/2DG/packages/client
+[client] > vite
+[client] 
+[client] Port 5173 is in use, trying another one...
+[client] 
+[client]   VITE v5.4.19  ready in 1558 ms
+[client] 
+[client]   ➜  Local:   http://localhost:5174/
+[client]   ➜  Network: http://10.255.255.254:5174/
+[client]   ➜  Network: http://172.27.245.2:5174/
+[server] DEPRECATION WARNING: 'pingInterval', 'pingMaxRetries', 'server', and 'verifyClient' Server options will be permanently moved to WebSocketTransport on v0.15
+[server] new Server({
+[server]   transport: new WebSocketTransport({
+[server]     pingInterval: ...,
+[server]     pingMaxRetries: ...,
+[server]     server: ...,
+[server]     verifyClient: ...
+[server]   })
+[server] })
+[server] 👉 Documentation: https://docs.colyseus.io/server/transport/
+[server] Error: listen EADDRINUSE: address already in use :::2567
+[server]     at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+[server]     at listenInCluster (node:net:1997:12)
+[server]     at Server.listen (node:net:2102:7)
+[server]     at cors (/mnt/c/Dev/2DG/packages/server/src/index.ts:20:12)
+[server]     at Object.<anonymous> (/mnt/c/Dev/2DG/packages/server/src/index.ts:22:2)
+[server]     at Module._compile (node:internal/modules/cjs/loader:1692:14)
+[server]     at Object.transformer (/mnt/c/Dev/2DG/node_modules/.pnpm/tsx@4.20.3/node_modules/tsx/dist/register-D46fvsV_.cjs:3:1104)
+[server]     at Module.load (node:internal/modules/cjs/loader:1427:32)
+[server]     at Module._load (node:internal/modules/cjs/loader:1250:12)
+[server]     at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+[server] pnpm -F @toodee/server dev exited with code 0
+--> Sending SIGTERM to other processes..
+[client] /mnt/c/Dev/2DG/packages/client:
+[client]  ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @toodee/client@0.1.0 dev: `vite`
+[client] Command failed with signal "SIGTERM"
+[client] VITE_SERVER_URL=ws://localhost:2567 pnpm -F @toodee/client dev exited with code SIGTERM
+ ELIFECYCLE  Command failed with exit code 1.

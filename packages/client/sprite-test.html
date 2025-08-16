@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sprite Generation Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #222;
+            color: #0f0;
+        }
+        #game-container {
+            width: 800px;
+            height: 600px;
+            border: 2px solid #0f0;
+            margin: 20px auto;
+            background: #444;
+        }
+        #status {
+            text-align: center;
+            padding: 10px;
+        }
+        .info {
+            padding: 10px;
+            border: 1px solid #0f0;
+            margin: 10px 0;
+            background: #111;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sprite Generation Test</h1>
+    <div id="status">Initializing...</div>
+    <div id="game-container"></div>
+    <div id="info" class="info">
+        <p>This test verifies that sprites are being generated and rendered correctly.</p>
+        <p>You should see:</p>
+        <ul>
+            <li>A blue player character</li>
+            <li>A purple other player character</li>
+            <li>A red mob character</li>
+            <li>All should be animated and moving</li>
+        </ul>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+    <script type="module">
+        const statusEl = document.getElementById('status');
+        
+        class TestScene extends Phaser.Scene {
+            constructor() {
+                super({ key: 'test' });
+            }
+            
+            preload() {
+                statusEl.textContent = 'Loading sprites...';
+                
+                // Import the sprite generator
+                this.generateCharacterSpritesheet('player', 0x3498db, 32);
+                this.generateCharacterSpritesheet('other_player', 0x9b59b6, 32);
+                this.generateCharacterSpritesheet('mob', 0xe74c3c, 32);
+            }
+            
+            create() {
+                statusEl.textContent = 'Creating sprites...';
+                
+                // Set background
+                this.cameras.main.setBackgroundColor('#333333');
+                
+                // Create animations
+                this.createAnimations();
+                
+                // Create test sprites
+                const player = this.add.sprite(200, 300, 'player');
+                player.setScale(3);
+                player.play('player_walk_right');
+                
+                const otherPlayer = this.add.sprite(400, 300, 'other_player');
+                otherPlayer.setScale(3);
+                otherPlayer.play('other_player_walk_down');
+                
+                const mob = this.add.sprite(600, 300, 'mob');
+                mob.setScale(3);
+                mob.play('mob_walk_left');
+                
+                // Add labels
+                this.add.text(200, 400, 'Player', {
+                    fontSize: '20px',
+                    color: '#3498db'
+                }).setOrigin(0.5);
+                
+                this.add.text(400, 400, 'Other Player', {
+                    fontSize: '20px',
+                    color: '#9b59b6'
+                }).setOrigin(0.5);
+                
+                this.add.text(600, 400, 'Mob', {
+                    fontSize: '20px',
+                    color: '#e74c3c'
+                }).setOrigin(0.5);
+                
+                statusEl.textContent = 'Sprites loaded and animated successfully!';
+            }
+            
+            createAnimations() {
+                ['player', 'other_player', 'mob'].forEach(key => {
+                    // Idle animations
+                    this.anims.create({
+                        key: `${key}_idle_down`,
+                        frames: [{ key, frame: 0 }],
+                        frameRate: 1,
+                        repeat: 0
+                    });
+                    
+                    this.anims.create({
+                        key: `${key}_idle_left`,
+                        frames: [{ key, frame: 4 }],
+                        frameRate: 1,
+                        repeat: 0
+                    });
+                    
+                    this.anims.create({
+                        key: `${key}_idle_right`,
+                        frames: [{ key, frame: 8 }],
+                        frameRate: 1,
+                        repeat: 0
+                    });
+                    
+                    this.anims.create({
+                        key: `${key}_idle_up`,
+                        frames: [{ key, frame: 12 }],
+                        frameRate: 1,
+                        repeat: 0
+                    });
+                    
+                    // Walking animations
+                    this.anims.create({
+                        key: `${key}_walk_down`,
+                        frames: this.anims.generateFrameNumbers(key, { start: 0, end: 3 }),
+                        frameRate: 8,
+                        repeat: -1
+                    });
+                    
+                    this.anims.create({
+                        key: `${key}_walk_left`,
+                        frames: this.anims.generateFrameNumbers(key, { start: 4, end: 7 }),
+                        frameRate: 8,
+                        repeat: -1
+                    });
+                    
+                    this.anims.create({
+                        key: `${key}_walk_right`,
+                        frames: this.anims.generateFrameNumbers(key, { start: 8, end: 11 }),
+                        frameRate: 8,
+                        repeat: -1
+                    });
+                    
+                    this.anims.create({
+                        key: `${key}_walk_up`,
+                        frames: this.anims.generateFrameNumbers(key, { start: 12, end: 15 }),
+                        frameRate: 8,
+                        repeat: -1
+                    });
+                });
+            }
+            
+            generateCharacterSpritesheet(key, color, size = 32) {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // 4x4 grid: 4 directions x 4 frames each
+                canvas.width = size * 4;
+                canvas.height = size * 4;
+
+                // Convert hex color to RGB
+                const r = (color >> 16) & 255;
+                const g = (color >> 8) & 255;
+                const b = color & 255;
+                const colorStr = `rgb(${r}, ${g}, ${b})`;
+                const darkColorStr = `rgb(${Math.floor(r * 0.7)}, ${Math.floor(g * 0.7)}, ${Math.floor(b * 0.7)})`;
+
+                // Generate frames for each direction
+                const directions = ['down', 'left', 'right', 'up'];
+                
+                directions.forEach((dir, dirIndex) => {
+                    for (let frame = 0; frame < 4; frame++) {
+                        const x = frame * size;
+                        const y = dirIndex * size;
+
+                        // Clear frame area
+                        ctx.clearRect(x, y, size, size);
+
+                        // Draw shadow
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                        ctx.beginPath();
+                        ctx.ellipse(x + size/2, y + size - 4, size/3, size/6, 0, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // Draw body
+                        ctx.fillStyle = colorStr;
+                        ctx.fillRect(x + size/3, y + size/2, size/3, size/3);
+
+                        // Draw head
+                        const headSize = size/4;
+                        ctx.beginPath();
+                        ctx.arc(x + size/2, y + size/3, headSize, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // Draw face based on direction
+                        ctx.fillStyle = '#000000';
+                        const eyeSize = 2;
+                        const eyeY = y + size/3 - 2;
+                        
+                        switch(dir) {
+                            case 'down':
+                                ctx.fillRect(x + size/2 - 4, eyeY, eyeSize, eyeSize);
+                                ctx.fillRect(x + size/2 + 2, eyeY, eyeSize, eyeSize);
+                                break;
+                            case 'left':
+                                ctx.fillRect(x + size/2 - 4, eyeY, eyeSize, eyeSize);
+                                break;
+                            case 'right':
+                                ctx.fillRect(x + size/2 + 2, eyeY, eyeSize, eyeSize);
+                                break;
+                        }
+
+                        // Draw limbs
+                        ctx.strokeStyle = darkColorStr;
+                        ctx.lineWidth = 3;
+                        
+                        // Arms
+                        ctx.beginPath();
+                        ctx.moveTo(x + size/3, y + size/2 + 2);
+                        ctx.lineTo(x + size/4, y + size/2 + 8);
+                        ctx.stroke();
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(x + 2*size/3, y + size/2 + 2);
+                        ctx.lineTo(x + 3*size/4, y + size/2 + 8);
+                        ctx.stroke();
+
+                        // Legs
+                        ctx.beginPath();
+                        ctx.moveTo(x + size/2 - 3, y + 2*size/3);
+                        ctx.lineTo(x + size/2 - 3, y + size - 6);
+                        ctx.stroke();
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(x + size/2 + 3, y + 2*size/3);
+                        ctx.lineTo(x + size/2 + 3, y + size - 6);
+                        ctx.stroke();
+                    }
+                });
+
+                // Create texture from canvas
+                this.textures.addCanvas(key, canvas);
+            }
+        }
+        
+        // Create game
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            parent: 'game-container',
+            scene: TestScene,
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 0 },
+                    debug: false
+                }
+            }
+        };
+        
+        const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>

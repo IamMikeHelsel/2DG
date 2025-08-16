@@ -166,13 +166,7 @@ export class GameRoom extends Room<WorldState> {
     // Spawn some basic mobs for testing
     this.initializeMobs();
   }
-
-  onLeave(client: Client, consented: boolean) {
-    this.state.players.delete(client.sessionId);
-    this.inputs.delete(client.sessionId);
-  }
-
-  update(dt: number) {
+    update(dt: number) {
     const tickStart = performance.now();
     
     // per-player movement

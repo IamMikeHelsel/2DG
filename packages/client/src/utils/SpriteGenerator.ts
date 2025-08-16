@@ -130,17 +130,11 @@ export class SpriteGenerator {
       }
     });
 
-    // Create texture from canvas and configure frames
-    scene.textures.addCanvas(key, canvas);
-    
-    // Add individual frames for animation system
-    const texture = scene.textures.get(key);
-    for (let row = 0; row < 4; row++) {
-      for (let col = 0; col < 4; col++) {
-        const frameIndex = row * 4 + col;
-        texture.add(frameIndex.toString(), 0, col * size, row * size, size, size);
-      }
-    }
+    // Create texture from canvas as a sprite sheet
+    scene.textures.addSpriteSheet(key, canvas as any, {
+      frameWidth: size,
+      frameHeight: size
+    });
   }
 
   static generateNPCSpritesheet(
