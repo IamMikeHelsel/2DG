@@ -94,7 +94,7 @@ export class ImprovedGameScene extends Phaser.Scene {
     }
 
     // Setup player handlers with improved sprites
-    this.room.state.players.onAdd = (p: ServerPlayer, key: string) => {
+    this.room.state.players.onAdd((p: ServerPlayer, key: string) => {
       const isLocal = key === this.room.sessionId;
       
       // Create container for player
@@ -178,15 +178,15 @@ export class ImprovedGameScene extends Phaser.Scene {
           strokeThickness: 1
         }).setScrollFactor(0).setDepth(100);
       }
-    };
+    });
 
-    this.room.state.players.onRemove = (_: any, key: string) => {
+    this.room.state.players.onRemove((_: any, key: string) => {
       this.players.get(key)?.destroy();
       this.players.delete(key);
       this.playerSprites.delete(key);
-    };
+    });
 
-    this.room.state.players.onChange = (p: ServerPlayer, key: string) => {
+    this.room.state.players.onChange((p: ServerPlayer, key: string) => {
       const container = this.players.get(key);
       const sprite = this.playerSprites.get(key);
       if (!container || !sprite) return;
@@ -286,7 +286,7 @@ export class ImprovedGameScene extends Phaser.Scene {
         this.xpText?.setText(`XP: ${p.currentXp || 0}/${p.xpToNext || 100}`);
         this.saveSave(p);
       }
-    };
+    });
 
     // Mob handlers with sprites
     this.room.state.mobs?.onAdd?.((m: any, key: string) => {
