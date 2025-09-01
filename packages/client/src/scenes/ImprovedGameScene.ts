@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { createClient } from "../net";
+import { createClient, connectWithRetry } from "../net";
 import { TILE_SIZE, MAP, ChatMessage } from "@toodee/shared";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
 
@@ -81,15 +81,32 @@ export class ImprovedGameScene extends Phaser.Scene {
     this.splashImage = this.add.image(this.scale.width / 2, this.scale.height / 2, "splash")
       .setScrollFactor(0).setDepth(1000);
 
+    // Prepare toast UI early so we can show connection errors
+    this.setupToasts();
+
     // Connect to server
     const client = createClient();
     const restore = this.loadSave();
     const name = restore?.name || this.randomName();
     
     try {
-      this.room = await client.joinOrCreate("toodee", { name, restore });
+      // More resilient connection with retries
+      this.room = await connectWithRetry(5, 1500);
     } catch (err) {
       this.showToast("Cannot connect to server", "error");
+      // Fade out splash so users aren’t stuck on an image
+      if (this.splashImage) {
+        this.tweens.add({ targets: this.splashImage, alpha: 0, duration: 600, onComplete: () => this.splashImage?.destroy() });
+      }
+      // Show quick hint and allow retry via 'R'
+      this.add.text(this.scale.width / 2, this.scale.height / 2 + 40, "Start the server then press R to retry", {
+        color: "#ffffff",
+        fontSize: "14px",
+        stroke: '#000000',
+        strokeThickness: 2
+      }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(200);
+      const keyR = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+      keyR.on("down", () => window.location.reload());
       return;
     }
 
@@ -131,7 +148,8 @@ export class ImprovedGameScene extends Phaser.Scene {
       if (isLocal) {
         this.cameraTarget = container;
         this.cameras.main.startFollow(container, true, 0.15, 0.15);
-        this.cameras.main.setZoom(3);
+        // Use a slightly wider default zoom for better visibility
+        this.cameras.main.setZoom(2);
         this.cameras.main.setBounds(0, 0, MAP.width * TILE_SIZE, MAP.height * TILE_SIZE, true);
         
         // Initialize predicted position
