@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { createClient, connectWithRetry } from "../net";
 import { TILE_SIZE, MAP, ChatMessage, isMichiganLand } from "@toodee/shared";
+import { DialogueUI } from "../ui/DialogueUI";
 import { computeNextPosition } from "@toodee/shared/movement";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
 
@@ -41,6 +42,7 @@ export class ImprovedGameScene extends Phaser.Scene {
   private levelText?: Phaser.GameObjects.Text;
   private xpText?: Phaser.GameObjects.Text;
   private shopEl?: HTMLDivElement;
+  private dialogueUI?: import('../ui/DialogueUI').DialogueUI;
   private splashImage?: Phaser.GameObjects.Image;
   private toastRoot?: HTMLDivElement;
   private terrainMap: number[][] = [];
@@ -190,7 +192,7 @@ export class ImprovedGameScene extends Phaser.Scene {
         }).setScrollFactor(0).setDepth(100);
         
         // Add controls hint
-        this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | E for shop | ENTER to chat", {
+        this.add.text(12, this.scale.height - 40, "Controls: Arrow keys or Right-click to move | SPACE to attack | Type 'hail' to talk | ENTER to chat", {
           color: "#aaaaaa",
           fontSize: "12px",
           stroke: '#000000',
@@ -360,6 +362,19 @@ export class ImprovedGameScene extends Phaser.Scene {
     // Handle shop
     this.room.onMessage("shop:list", (payload: any) => this.showShop(payload));
     this.room.onMessage("shop:result", (payload: any) => this.updateShopResult(payload));
+    // Handle NPC dialogue
+    this.room.onMessage("npc:dialogue", (payload: { npc: string; text: string; options?: { text: string; action: string }[] }) => {
+      if (!this.dialogueUI) this.dialogueUI = new DialogueUI(this);
+      const ui = this.dialogueUI!;
+      const responses = (payload.options || []).map(opt => ({
+        text: opt.text,
+        action: () => {
+          if (opt.action === 'shop') this.room?.send('shop:list');
+          if (opt.action === 'close') {/* no-op */}
+        }
+      }));
+      ui.show(payload.npc, { text: payload.text, responses });
+    });
     
     // Handle chat
     this.room.onMessage("chat", (msg: ChatMessage) => this.appendChat(msg));
@@ -551,10 +566,9 @@ export class ImprovedGameScene extends Phaser.Scene {
     let targetPos: { x: number, y: number } | null = null;
     let myPos = { x: 0, y: 0 };
     
-    // Left or right-click to move
+    // Right-click to move
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // Allow both left and right click for movement
-      if (pointer.leftButtonDown() || pointer.rightButtonDown()) {
+      if (pointer.rightButtonDown()) {
         // Get world coordinates
         const worldX = this.cameras.main.scrollX + pointer.x / this.cameras.main.zoom;
         const worldY = this.cameras.main.scrollY + pointer.y / this.cameras.main.zoom;
@@ -644,18 +658,14 @@ export class ImprovedGameScene extends Phaser.Scene {
     const space = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     space.on("down", () => this.room?.send("attack"));
 
-    // Shop
-    const keyE = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E);
-    keyE.on("down", () => this.tryOpenShop());
+    // Remove 'E' for shop; conversations start via chat keywords
 
     // Chat
     const enter = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     enter.on("down", () => this.toggleChat());
   }
 
-  private tryOpenShop() {
-    this.room?.send("shop:list");
-  }
+  // Shop is opened via NPC dialogue option
 
   private toggleChat() {
     if (!this.chatInputEl) return;

@@ -35,16 +35,6 @@ export class Player extends Schema {
   // Inventory (simplified for now - item ID to quantity)
   @type({ map: "uint16" }) inventory = new MapSchema<number>();
   
-  // Founder rewards system
-  @type("string") founderTier: string = "none";
-  @type("uint64") joinTimestamp: number = 0;
-  @type("uint16") bugReports: number = 0;
-  @type("uint16") referralsCount: number = 0;
-  @type(["string"]) unlockedRewards = new ArraySchema<string>();
-  @type("boolean") anniversaryParticipated: boolean = false;
-  @type("string") displayTitle: string = "";
-  @type("string") chatColor: string = "#FFFFFF";
-  
   // Zone/Instance info
   @type("string") currentZone: string = "town";
 }

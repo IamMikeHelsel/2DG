@@ -87,6 +87,6 @@ tsconfig.base.json
 ### Notes
 - The map renderer uses simple colored tiles (no external images) at 32×32. Swap to Tiled/atlas later.
 - Networking: 20 Hz server tick; client sends directional inputs; server is authoritative with client-side prediction + reconciliation.
-- Controls: Arrow keys or right-click to move, `SPACE` to attack, `E` to open shop, `ENTER` to chat.
+- Controls: Arrow keys or right-click to move, `SPACE` to attack, type `hail`/`hi`/`hello` to talk to NPCs, `ENTER` to chat.
 - Performance: Room logs avg/p95 tick every 30s. Aim for p95 < 8ms with 12+ players.
 - Colyseus transport: You may see a deprecation warning about `Server({ server: httpServer })`. It’s safe for now; migrate to `WebSocketTransport` when convenient.

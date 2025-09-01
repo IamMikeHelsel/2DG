@@ -82,7 +82,7 @@ export class NPC {
     this.interactionIndicator = scene.add.text(
       this.x * TILE_SIZE,
       this.y * TILE_SIZE - 35,
-      'Press E to interact',
+      "Say 'hail' to talk",
       {
         fontSize: '10px',
         color: '#ffff00',
