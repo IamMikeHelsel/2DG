@@ -10,6 +10,7 @@
     "lint": "echo \"(client lint placeholder)\""
   },
   "dependencies": {
+    "@toodee/shared": "workspace:*",
     "colyseus.js": "^0.15.11",
     "phaser": "^3.80.0"
   },

@@ -20,10 +20,11 @@ pnpm i
 pnpm -F @toodee/server dev
 
 # In another terminal: run client (Phaser)
-pnpm -F @toodee/client dev
+# Note: set VITE_SERVER_URL to your server ws URL
+VITE_SERVER_URL=ws://localhost:2567 pnpm -F @toodee/client dev
 # Open http://localhost:5173
 
-# Run both concurrently
+# Or run both concurrently (root script sets VITE_SERVER_URL for you)
 pnpm dev:all
 ```
 
@@ -42,11 +43,14 @@ pnpm test:unit
 pnpm test:e2e
 ```
 
-See [E2E_TESTING.md](./E2E_TESTING.md) for detailed information about the end-to-end test ecosystem that validates multi-user gameplay scenarios.
+See `packages/server/tests/e2e/` and [E2E_TESTING.md](./E2E_TESTING.md) for detailed information about the end-to-end test ecosystem that validates multi-user gameplay scenarios, including multi-client movement, chat, and combat.
+Tip: these E2E tests are a good proxy for validating the goal of ~12 simultaneous players.
 
 ## Env
 
 - Client expects `VITE_SERVER_URL` (e.g., `wss://toodeegame.fly.dev` in prod; `ws://localhost:2567` local).
+- Server binds to `PORT` (default `2567`).
+- Monorepo deps: client and server import shared code via `@toodee/shared` (declared as a workspace dependency). After adding new shared exports, run `pnpm -r build` so consumers see updated types.
 
 ## Deploy (Server – Fly.io)
 
@@ -82,4 +86,7 @@ tsconfig.base.json
 
 ### Notes
 - The map renderer uses simple colored tiles (no external images) at 32×32. Swap to Tiled/atlas later.
-- Networking: 20 Hz server tick; client sends directional inputs; server is authoritative.
+- Networking: 20 Hz server tick; client sends directional inputs; server is authoritative with client-side prediction + reconciliation.
+- Controls: Arrow keys or right-click to move, `SPACE` to attack, `E` to open shop, `ENTER` to chat.
+- Performance: Room logs avg/p95 tick every 30s. Aim for p95 < 8ms with 12+ players.
+- Colyseus transport: You may see a deprecation warning about `Server({ server: httpServer })`. It’s safe for now; migrate to `WebSocketTransport` when convenient.

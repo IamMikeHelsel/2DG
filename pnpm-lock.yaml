@@ -14,6 +14,9 @@ importers:
 
   packages/client:
     dependencies:
+      '@toodee/shared':
+        specifier: workspace:*
+        version: link:../shared
       colyseus.js:
         specifier: ^0.15.11
         version: 0.15.28
@@ -36,6 +39,9 @@ importers:
       '@colyseus/schema':
         specifier: ^2.0.28
         version: 2.0.37
+      '@toodee/shared':
+        specifier: workspace:*
+        version: link:../shared
       colyseus:
         specifier: ^0.15.16
         version: 0.15.57(@colyseus/schema@2.0.37)(express@4.21.2)

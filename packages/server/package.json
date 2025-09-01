@@ -14,6 +14,7 @@
     "test:all": "vitest run"
   },
   "dependencies": {
+    "@toodee/shared": "workspace:*",
     "@colyseus/schema": "^2.0.28",
     "colyseus": "^0.15.16",
     "cors": "^2.8.5",
