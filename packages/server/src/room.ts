@@ -6,9 +6,11 @@ import {
   FounderTier, FOUNDER_REWARDS, REFERRAL_REWARDS, ANNIVERSARY_REWARDS,
   EARLY_BIRD_LIMIT, BETA_TEST_PERIOD_DAYS, BUG_HUNTER_REPORTS_REQUIRED,
   calculateLevelFromXp, getBaseStatsForLevel, DEFAULT_ITEMS, MOB_TEMPLATES, 
-  LOOT_TABLES, MobType, AIState, DamageType, ZONES, ZoneType, CRAFTING_RECIPES
+  LOOT_TABLES, MobType, AIState, DamageType, ZONES, ZoneType, CRAFTING_RECIPES,
+  computeNextPosition
 } from "@toodee/shared";
 import { generateMichiganish, isWalkable, type Grid } from "./map.js";
+import { makeRng, type Rng } from './utils/rng.js';
 
 type Input = { seq: number; up: boolean; down: boolean; left: boolean; right: boolean; attack?: boolean; rangedAttack?: boolean };
 
@@ -18,6 +20,7 @@ export class GameRoom extends Room<WorldState> {
   private speed = 4; // tiles per second (server units are tiles)
   private lastAttack = new Map<string, number>();
   private attackCooldown = 400; // ms
+  private rng!: Rng;
 
   // Founder tracking
   private joinCounter = 0;
@@ -36,6 +39,7 @@ export class GameRoom extends Room<WorldState> {
   onCreate(options: any) {
     this.setPatchRate(1000 / 10); // send state ~10/s; interpolate on client
     this.setState(new WorldState());
+    this.rng = makeRng(options?.seed ?? this.roomId ?? Date.now());
     
     // Configure room for specific zone
     this.currentZone = options?.zone || "town";
@@ -50,7 +54,7 @@ export class GameRoom extends Room<WorldState> {
       this.state.height = MAP.height;
     }
 
-    this.grid = generateMichiganish();
+    this.grid = generateMichiganish(this.rng);
 
     this.onMessage("input", (client, data: Input) => {
       this.inputs.set(client.sessionId, data);
@@ -176,71 +180,23 @@ export class GameRoom extends Room<WorldState> {
   update(dt: number) {
     const tickStart = performance.now();
     
-    // per-player movement
+    // per-player movement (shared logic)
     this.state.players.forEach((p, id) => {
       const inp = this.inputs.get(id);
       if (!inp) return;
-      
-      const vel = { x: 0, y: 0 };
-      if (inp.up) vel.y -= 1;
-      if (inp.down) vel.y += 1;
-      if (inp.left) vel.x -= 1;
-      if (inp.right) vel.x += 1;
-      
-      // normalize diagonal movement
-      if (vel.x !== 0 || vel.y !== 0) {
-        const mag = Math.hypot(vel.x, vel.y);
-        vel.x /= mag;
-        vel.y /= mag;
-      }
-      
-      const oldX = p.x;
-      const oldY = p.y;
-      
-      // Calculate new position
-      const nx = p.x + vel.x * this.speed * dt;
-      const ny = p.y + vel.y * this.speed * dt;
 
-      // Enhanced collision detection
-      const tx = Math.round(nx);
-      const ty = Math.round(ny);
-      
-      // Check if new position is walkable
-      let canMoveX = true;
-      let canMoveY = true;
-      
-      // Check X movement
-      if (!isWalkable(this.grid, Math.round(nx), Math.round(p.y))) {
-        canMoveX = false;
-      }
-      
-      // Check Y movement  
-      if (!isWalkable(this.grid, Math.round(p.x), Math.round(ny))) {
-        canMoveY = false;
-      }
-      
-      // Check diagonal movement
-      if (!isWalkable(this.grid, Math.round(nx), Math.round(ny))) {
-        canMoveX = false;
-        canMoveY = false;
-      }
-      
-      // Apply movement based on collision results
-      if (canMoveX) {
-        p.x = nx;
-      }
-      if (canMoveY) {
-        p.y = ny;
-      }
-      
-      // Only update direction if actually moving or trying to move
-      if (vel.x !== 0 || vel.y !== 0) {
-        if (vel.y < 0) p.dir = 0; // up
-        else if (vel.x > 0) p.dir = 1; // right
-        else if (vel.y > 0) p.dir = 2; // down
-        else if (vel.x < 0) p.dir = 3; // left
-      }
+      const result = computeNextPosition(
+        { x: p.x, y: p.y },
+        inp,
+        this.speed,
+        dt,
+        (x, y) => isWalkable(this.grid, x, y),
+        p.dir
+      );
 
+      p.x = result.x;
+      p.y = result.y;
+      p.dir = result.dir;
       p.lastSeq = inp.seq >>> 0;
     });
     
@@ -295,7 +251,7 @@ export class GameRoom extends Room<WorldState> {
         
         // Simple damage calculation: attack - defense, minimum 1
         const rawDamage = attacker.attack - mobDefense;
-        const finalDamage = Math.max(1, Math.floor(rawDamage * (0.8 + Math.random() * 0.4))); // 20% variance
+        const finalDamage = Math.max(1, Math.floor(rawDamage * (0.8 + this.rng.next() * 0.4))); // 20% variance
         
         mob.hp = Math.max(0, mob.hp - finalDamage);
         hitSomething = true;
@@ -338,7 +294,7 @@ export class GameRoom extends Room<WorldState> {
       if (tx === front.x && ty === front.y) {
         // Calculate PvP damage (reduced compared to PvE)
         const rawDamage = attacker.attack - target.defense;
-        const finalDamage = Math.max(5, Math.floor(rawDamage * 0.3 * (0.8 + Math.random() * 0.4))); // Much lower for PvP
+        const finalDamage = Math.max(5, Math.floor(rawDamage * 0.3 * (0.8 + this.rng.next() * 0.4))); // Much lower for PvP
         
         target.hp = Math.max(0, target.hp - finalDamage);
         
@@ -419,13 +375,15 @@ export class GameRoom extends Room<WorldState> {
     this.clients.find(c => c.sessionId === playerId)?.send("shop:result", { ok: true, gold: p.gold, pots: p.pots });
     
     // Spawn a training dummy near town when someone buys potions
-    if (Math.random() < GameRoom.SPAWN_DUMMY_PROBABILITY) { // 30% chance
+    if (this.rng.next() < GameRoom.SPAWN_DUMMY_PROBABILITY) { // 30% chance
       this.spawnMob({ x: Math.floor(MAP.width * 0.45) + 4, y: Math.floor(MAP.height * 0.55) });
     }
   }
 
   private logPerformanceStats() {
     if (this.tickTimes.length === 0) return;
+    // Silence in tests to keep output clean
+    if (process?.env?.NODE_ENV === 'test') return;
     
     const sorted = [...this.tickTimes].sort((a, b) => a - b);
     const p95Index = Math.floor(sorted.length * 0.95);
@@ -639,7 +597,7 @@ export class GameRoom extends Room<WorldState> {
     if (!template) return;
     
     const mob = new Mob();
-    mob.id = `${mobType}_${Math.random().toString(36).slice(2, 8)}`;
+    mob.id = this.rng.uuid(`${mobType}_`);
     mob.type = mobType;
     mob.name = template.name;
     mob.x = x;
@@ -665,13 +623,13 @@ export class GameRoom extends Room<WorldState> {
     
     // Process each loot entry
     lootTable.entries.forEach(entry => {
-      if (Math.random() <= entry.dropChance) {
+      if (this.rng.next() <= entry.dropChance) {
         const drop = new DroppedItem();
-        drop.id = `drop_${Math.random().toString(36).slice(2, 8)}`;
+        drop.id = this.rng.uuid('drop_');
         drop.itemId = entry.itemId;
         drop.quantity = entry.quantity;
-        drop.x = x + (Math.random() - 0.5) * 2; // Small random spread
-        drop.y = y + (Math.random() - 0.5) * 2;
+        drop.x = x + (this.rng.next() - 0.5) * 2; // Small random spread
+        drop.y = y + (this.rng.next() - 0.5) * 2;
         drop.dropTime = Date.now();
         drop.droppedBy = killerPlayerId;
         
@@ -696,7 +654,7 @@ export class GameRoom extends Room<WorldState> {
 
     // Create projectile in direction player is facing
     const projectile = new Projectile();
-    projectile.id = `proj_${Math.random().toString(36).slice(2, 8)}`;
+    projectile.id = this.rng.uuid('proj_');
     projectile.ownerId = playerId;
     projectile.x = attacker.x;
     projectile.y = attacker.y;
@@ -857,9 +815,9 @@ export class GameRoom extends Room<WorldState> {
       switch (mob.aiState) {
         case AIState.Patrol:
           // Random patrol around spawn point
-          if (Math.random() < 0.02) { // 2% chance per frame to change direction
-            const angle = Math.random() * Math.PI * 2;
-            const distance = 2 + Math.random() * 3; // 2-5 tiles from center
+          if (this.rng.next() < 0.02) { // 2% chance per frame to change direction
+            const angle = this.rng.next() * Math.PI * 2;
+            const distance = 2 + this.rng.next() * 3; // 2-5 tiles from center
             const targetX = mob.patrolCenterX + Math.cos(angle) * distance;
             const targetY = mob.patrolCenterY + Math.sin(angle) * distance;
             

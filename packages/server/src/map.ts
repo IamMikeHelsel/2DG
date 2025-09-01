@@ -1,6 +1,7 @@
-import { MAP, Tile, TiledMap } from "@toodee/shared";
+import { MAP, Tile, TiledMap, isMichiganLand } from "@toodee/shared";
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Rng } from './utils/rng';
 
 export type Grid = Uint8Array & { w?: number; h?: number };
 
@@ -43,8 +44,8 @@ export function loadMichiganMap(): TiledMap {
   return tiledMap;
 }
 
-export function generateMichiganish(): Grid {
-  if (cachedGrid) return cachedGrid;
+export function generateMichiganish(rng?: Rng): Grid {
+  if (cachedGrid) return cachedGrid as Grid;
   
   const w = MAP.width, h = MAP.height;
   const grid = new Uint8Array(w * h) as Grid;
@@ -54,36 +55,27 @@ export function generateMichiganish(): Grid {
   // Fill with water
   grid.fill(Tile.Water);
 
-  // Very rough "mitten-like" landmass using ellipses + a thumb
-  const cx = Math.floor(w * 0.45), cy = Math.floor(h * 0.55);
-  const rx = Math.floor(w * 0.28), ry = Math.floor(h * 0.32);
+  // Michigan-inspired landmass (shared logic)
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const nx = (x - cx) / rx;
-      const ny = (y - cy) / ry;
-      if (nx*nx + ny*ny <= 1.0) {
-        grid[y*w + x] = Tile.Land;
+      if (isMichiganLand(x, y, w, h)) {
+        grid[y * w + x] = Tile.Land;
       }
-    }
-  }
-  // Thumb
-  for (let y = Math.floor(h*0.45); y < Math.floor(h*0.70); y++) {
-    for (let x = Math.floor(w*0.60); x < Math.floor(w*0.70); x++) {
-      grid[y*w + x] = Tile.Land;
     }
   }
 
   // Sprinkle rocks
   for (let i=0;i< w*h*0.03;i++) {
-    const x = Math.floor(Math.random()*w);
-    const y = Math.floor(Math.random()*h);
+    const x = Math.floor((rng?.next?.() ?? Math.random())*w);
+    const y = Math.floor((rng?.next?.() ?? Math.random())*h);
     if (grid[y*w + x] === Tile.Land) grid[y*w + x] = Tile.Rock;
   }
   
   // Add some cave areas in northern region
   for (let y = 0; y < h * 0.4; y++) {
     for (let x = 0; x < w; x++) {
-      if (grid[y*w + x] === Tile.Land && Math.random() < 0.1) {
+      const r = (rng?.next?.() ?? Math.random());
+      if (grid[y*w + x] === Tile.Land && r < 0.1) {
         grid[y*w + x] = Tile.CaveFloor;
       }
     }

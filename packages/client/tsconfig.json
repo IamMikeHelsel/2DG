@@ -4,11 +4,9 @@
     "baseUrl": ".",
     "types": ["vite/client"],
     "paths": {
-      "@toodee/shared": ["../shared/src"]
+      "@toodee/shared": ["../shared/src"],
+      "@toodee/shared/*": ["../shared/src/*"]
     }
   },
-  "include": ["src"],
-  "references": [
-    { "path": "../shared" }
-  ]
+  "include": ["src"]
 }

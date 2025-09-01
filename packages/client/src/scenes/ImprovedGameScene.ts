@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { createClient, connectWithRetry } from "../net";
-import { TILE_SIZE, MAP, ChatMessage } from "@toodee/shared";
+import { TILE_SIZE, MAP, ChatMessage, isMichiganLand } from "@toodee/shared";
+import { computeNextPosition } from "@toodee/shared/movement";
 import { SpriteGenerator } from "../utils/SpriteGenerator";
 
 type ServerPlayer = { 
@@ -463,44 +464,23 @@ export class ImprovedGameScene extends Phaser.Scene {
     this.mapLayer.fillStyle(0x2e86ab, 1);
     this.mapLayer.fillRect(0, 0, width * TILE_SIZE, height * TILE_SIZE);
     
-    // Create land areas
+    // Create Michigan-like landmass using shared logic
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        const dx = x - centerX;
-        const dy = y - centerY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        // Main landmass
-        if (distance < 25) {
+        if (isMichiganLand(x, y, width, height)) {
           this.terrainMap[y][x] = 1; // Land
-          
-          // Draw grass
           this.mapLayer.fillStyle(0x27ae60, 1);
           this.mapLayer.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-          
-          // Add grass texture
-          this.mapLayer.fillStyle(0x229954, 0.3);
-          for (let i = 0; i < 2; i++) {
-            const gx = x * TILE_SIZE + Math.random() * TILE_SIZE;
-            const gy = y * TILE_SIZE + Math.random() * TILE_SIZE;
-            this.mapLayer.fillRect(gx, gy, 2, 3);
-          }
-        }
-        // Beach/shore
-        else if (distance < 28) {
-          this.terrainMap[y][x] = 2; // Sand
-          
-          // Draw sand
-          this.mapLayer.fillStyle(0xf4d03f, 1);
-          this.mapLayer.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-        }
-        // Water (already drawn as background)
-        else {
+          // Light grass texture
+          this.mapLayer.fillStyle(0x229954, 0.25);
+          const gx = x * TILE_SIZE + (x * 13 + y * 7) % TILE_SIZE;
+          const gy = y * TILE_SIZE + (x * 11 + y * 5) % TILE_SIZE;
+          this.mapLayer.fillRect(gx, gy, 2, 3);
+        } else {
           this.terrainMap[y][x] = 0; // Water
-          
-          // Add wave effects
-          if (Math.random() > 0.95) {
-            this.mapLayer.lineStyle(1, 0x5dade2, 0.3);
+          // Optional subtle waves
+          if (((x * 17 + y * 19) % 97) === 0) {
+            this.mapLayer.lineStyle(1, 0x5dade2, 0.2);
             this.mapLayer.beginPath();
             this.mapLayer.moveTo(x * TILE_SIZE, y * TILE_SIZE + TILE_SIZE/2);
             this.mapLayer.lineTo(x * TILE_SIZE + TILE_SIZE, y * TILE_SIZE + TILE_SIZE/2);
@@ -933,52 +913,15 @@ export class ImprovedGameScene extends Phaser.Scene {
 
   // Client-side prediction methods
   private applyInputPrediction(input: { up: boolean; down: boolean; left: boolean; right: boolean }, dt: number) {
-    const vel = { x: 0, y: 0 };
-    if (input.up) vel.y -= 1;
-    if (input.down) vel.y += 1;
-    if (input.left) vel.x -= 1;
-    if (input.right) vel.x += 1;
-    
-    // normalize diagonal movement
-    if (vel.x !== 0 || vel.y !== 0) {
-      const mag = Math.hypot(vel.x, vel.y);
-      vel.x /= mag;
-      vel.y /= mag;
-    }
-    
-    // Calculate new position
-    const oldX = this.predictedPosition.x;
-    const oldY = this.predictedPosition.y;
-    const nx = this.predictedPosition.x + vel.x * this.speed * dt;
-    const ny = this.predictedPosition.y + vel.y * this.speed * dt;
-
-    // Client-side collision detection (matching server logic)
-    let canMoveX = true;
-    let canMoveY = true;
-    
-    // Check X movement
-    if (!this.isWalkableClient(Math.round(nx), Math.round(this.predictedPosition.y))) {
-      canMoveX = false;
-    }
-    
-    // Check Y movement  
-    if (!this.isWalkableClient(Math.round(this.predictedPosition.x), Math.round(ny))) {
-      canMoveY = false;
-    }
-    
-    // Check diagonal movement
-    if (!this.isWalkableClient(Math.round(nx), Math.round(ny))) {
-      canMoveX = false;
-      canMoveY = false;
-    }
-    
-    // Apply movement based on collision results
-    if (canMoveX) {
-      this.predictedPosition.x = nx;
-    }
-    if (canMoveY) {
-      this.predictedPosition.y = ny;
-    }
+    const result = computeNextPosition(
+      this.predictedPosition,
+      input,
+      this.speed,
+      dt,
+      (x: number, y: number) => this.isWalkableClient(x, y)
+    );
+    this.predictedPosition.x = result.x;
+    this.predictedPosition.y = result.y;
   }
 
   private isWalkableClient(x: number, y: number): boolean {
