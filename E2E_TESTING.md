@@ -81,6 +81,23 @@ pnpm test:unit
 pnpm test
 ```
 
+### Manual CLI Movement Tester
+
+For quick client-server movement checks without spinning up the browser, use the CLI in `tools/`:
+
+```bash
+# Default: connect to ws://localhost:2567 and walk right for 5s
+pnpm --filter ./tools move -- --pattern line --dir right --duration 5
+
+# Walk a square of 20 tiles per side, 2 loops
+pnpm --filter ./tools move -- --pattern square --side 20 --loops 2
+
+# Change server URL
+pnpm --filter ./tools move -- --url ws://localhost:9000 --pattern line --dir up --duration 3
+```
+
+The tool prints start/end positions and deltas; useful for scripting movement regressions and smoke tests.
+
 ### Development Workflow
 ```bash
 # Watch mode for E2E tests during development

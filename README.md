@@ -28,6 +28,21 @@ VITE_SERVER_URL=ws://localhost:2567 pnpm -F @toodee/client dev
 pnpm dev:all
 ```
 
+## Docker
+
+Run server (and optionally client) in containers:
+
+```bash
+# Server only
+docker build -t toodee-server .
+docker run --rm -p 2567:2567 toodee-server
+
+# Server + Client via Compose
+docker compose up --build
+# Server ws: ws://localhost:2567
+# Client: http://localhost:5173
+```
+
 ## Testing
 
 The project includes comprehensive testing for both individual components and complete multi-user scenarios:

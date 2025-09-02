@@ -39,6 +39,9 @@ export class TestClient {
         console.log(`[${this.playerName}] Left room with code ${code}`);
         this.connected = false;
       });
+
+      // Register a no-op chat handler to avoid noisy warnings in tests
+      this.room.onMessage("chat", () => {});
       
       this.connected = true;
       console.log(`[${this.playerName}] Connected successfully`);

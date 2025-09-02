@@ -7,7 +7,8 @@
   "scripts": {
     "test": "node load-test.js",
     "test:heavy": "PLAYERS=40 DURATION=120 node load-test.js",
-    "test:light": "PLAYERS=10 DURATION=30 node load-test.js"
+    "test:light": "PLAYERS=10 DURATION=30 node load-test.js",
+    "move": "node move-test.js"
   },
   "dependencies": {
     "colyseus.js": "^0.15.12"

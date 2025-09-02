@@ -23,4 +23,4 @@ RUN mkdir -p node_modules/@toodee/shared && \
     rm -rf ./shared-dist
 EXPOSE 2567
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s CMD wget -qO- http://127.0.0.1:2567/health || exit 1
-CMD ["node", "dist/server/src/index.js"]
+CMD ["node", "dist/src/index.js"]
